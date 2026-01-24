@@ -1,17 +1,19 @@
+// core/renderer.js
 import path from 'path';
-import fs from 'fs/promises';
+import fs from 'fs/promises'; // <-- Добавляем импорт
 import { fileURLToPath } from 'url';
+import Handlebars from 'handlebars'; // <-- ЯВНЫЙ ИМПОРТ
 import logger from '../utils/logger.js';
 import {
-  safeMkdir,
-  atomicWrite,
-  safeReadJson
+    safeMkdir,
+    atomicWrite,
+    safeReadJson
 } from '../utils/fs.js';
 import {
-  compileTemplate,
-  parseDirectives,
-  registerCorePartials,
-  registerHelpers
+    compileTemplate,
+    parseDirectives,
+    registerCorePartials,
+    registerHelpers
 } from './handlebars.js';
 import { paginateCollection, preparePageData } from './pagination.js';
 import config from '../config/default.js';
@@ -23,123 +25,209 @@ await registerCorePartials();
 registerHelpers();
 
 /**
- * Рендеринг одного шаблона с данными
- * @param {string} templatePath - Путь к шаблону
- * @param {Object} data - Данные для рендеринга
- * @param {string} outputDir - Целевая директория
- * @param {string} baseName - Базовое имя файла
+ * Копирование CSR-шаблона с правильной логикой путей
+ * @param {string} templateName - Имя шаблона (catalog)
+ * @param {string} csrTemplate - Имя CSR-шаблона (pagination)
+ * @param {string} outputDir - Директория вывода
  */
-export async function renderTemplate(templatePath, data, outputDir, baseName) {
-  try {
-    // Чтение шаблона
-    const templateContent = await fs.readFile(templatePath, 'utf8');
-    const directives = parseDirectives(templateContent);
-    const template = compileTemplate(templateContent);
+async function copyCsrTemplate(templateName, csrTemplate, outputDir) {
+    if (!csrTemplate) return false;
 
-    // Обработка директив
-    if (directives.some(d => d.command === 'paginate')) {
-      await handlePagination(directives, template, data, outputDir, baseName);
-    } else {
-      // Обычный рендеринг
-      const html = template(data);
-      const outputPath = path.join(outputDir, `${baseName}.html`);
-      await safeMkdir(path.dirname(outputPath));
-      await atomicWrite(outputPath, html);
-      logger.info(`Rendered single page: ${outputPath}`);
+    // ПРАВИЛЬНЫЕ ПУТИ: ищем в поддиректории шаблона
+    const sourceDir = path.join(config.source.templates, templateName);
+    const sourcePath = path.join(sourceDir, `${csrTemplate}.hbs`);
+
+    const outputTemplateDir = path.join(config.output.templates, templateName);
+    const outputPath = path.join(outputTemplateDir, `${csrTemplate}.hbs`);
+
+    try {
+        // Проверяем существование файла
+        await fs.access(sourcePath);
+
+        // Создаем директории
+        await safeMkdir(outputTemplateDir);
+
+        // Копируем
+        await fs.copyFile(sourcePath, outputPath);
+
+        logger.info(`✅ Copied CSR template: ${templateName}/${csrTemplate}.hbs`);
+        return true;
+
+    } catch (err) {
+        if (err.code === 'ENOENT') {
+            logger.warn(`⚠️ CSR template not found: ${sourcePath}`);
+            // Пытаемся найти в корне шаблонов как fallback
+            const fallbackPath = path.join(config.source.templates, `${csrTemplate}.hbs`);
+            try {
+                await fs.access(fallbackPath);
+                await safeMkdir(outputTemplateDir);
+                await fs.copyFile(fallbackPath, outputPath);
+                logger.info(`✅ Used fallback CSR template: ${csrTemplate}.hbs`);
+                return true;
+            } catch (fallbackErr) {
+                logger.error(`❌ CSR template not found in any location: ${csrTemplate}.hbs`, {
+                    primary: sourcePath,
+                    fallback: fallbackPath
+                });
+            }
+        } else {
+            logger.error(`❌ Failed to copy CSR template: ${sourcePath}`, {
+                error: err.message
+            });
+        }
+        return false;
+    }
+}
+
+/**
+ * Регистрация partials из директории шаблона
+ * @param {string} templateName - Имя шаблона (catalog)
+ * @param {string} templateBaseDir - Базовая директория шаблонов
+ */
+async function registerTemplatePartials(templateName, templateBaseDir) {
+    const templateDir = path.join(templateBaseDir, templateName);
+
+    try {
+        // Проверяем существование директории
+        await fs.access(templateDir);
+
+        // Читаем все .hbs файлы в директории
+        const files = await fs.readdir(templateDir);
+        const partials = files.filter(f => f.endsWith('.hbs'));
+
+        for (const file of partials) {
+            const partialName = path.basename(file, '.hbs');
+            const filePath = path.join(templateDir, file);
+            const content = await fs.readFile(filePath, 'utf8');
+
+            // Регистрируем partial с именем templateName/partialName
+            Handlebars.registerPartial(`${templateName}/${partialName}`, content);
+            logger.debug(`✅ Registered partial: ${templateName}/${partialName}`);
+        }
+
+        return partials.length;
+    } catch (err) {
+        if (err.code !== 'ENOENT') {
+            logger.error(`❌ Failed to register partials for ${templateName}`, {
+                error: err.message
+            });
+        }
+        return 0;
+    }
+}
+
+/**
+ * Основная функция рендеринга
+ * @param {string} templatePath - Путь к корневому шаблону
+ * @param {Object} data - Данные для рендеринга
+ * @param {string} outputDir - Директория вывода
+ * @param {string} itemName - Имя элемента (books)
+ * @param {string} templateName - Имя шаблона (catalog) <-- КРИТИЧЕСКИ ВАЖНЫЙ ПАРАМЕТР
+ */
+export async function renderTemplate(templatePath, data, outputDir, itemName, templateName) {
+    try {
+        // 1. Регистрируем partials ИЗ ДИРЕКТОРИИ ШАБЛОНА
+        await registerTemplatePartials(templateName, config.source.templates);
+
+        // 2. Читаем и парсим шаблон
+        const templateContent = await fs.readFile(templatePath, 'utf8');
+        const directives = parseDirectives(templateContent);
+        const template = compileTemplate(templateContent);
+
+        // 3. Обрабатываем директивы
+        if (directives.some(d => d.command === 'paginate')) {
+            const paginateDirective = directives.find(d => d.command === 'paginate');
+            const csrTemplate = paginateDirective.args.csrTemplate;
+
+            // 4. Копируем CSR-шаблон с ПРАВИЛЬНЫМ ИМЕНЕМ ШАБЛОНА
+            await copyCsrTemplate(templateName, csrTemplate, outputDir);
+
+            // 5. Обрабатываем пагинацию
+            await handlePagination(directives, template, data, outputDir, itemName, templateName);
+        } else {
+            // Обычный рендеринг
+            const html = template(data);
+            const outputPath = path.join(outputDir, `${itemName}.html`);
+            await safeMkdir(path.dirname(outputPath));
+            await atomicWrite(outputPath, html);
+            logger.info(`✅ Rendered single page: ${itemName}.html`);
+        }
+
+        return true;
+    } catch (err) {
+        logger.error(`❌ Failed to render template: ${templatePath}`, {
+            error: err.message,
+            stack: err.stack
+        });
+        throw err;
+    }
+}
+
+/**
+ * Обработка пагинации с правильным контекстом
+ */
+async function handlePagination(directives, template, data, outputDir, itemName, templateName) {
+    const paginateDirective = directives.find(d => d.command === 'paginate');
+    const {
+        collection = 'items',
+        perPage = config.pagination.defaultPerPage
+    } = paginateDirective.args;
+
+    // Разбиваем коллекцию на страницы
+    const pages = paginateCollection(data, collection, perPage);
+
+    // Генерируем страницы
+    for (const page of pages) {
+        const pageData = preparePageData(data, page, page.pageNumber);
+        const html = template(pageData);
+
+        // Определяем путь: output/html/catalog/books/page/1.html
+        const pageDir = path.join(outputDir, itemName, 'page');
+        const pagePath = path.join(pageDir, `${page.pageNumber}.html`);
+
+        await safeMkdir(pageDir);
+        await atomicWrite(pagePath, html);
+
+        logger.debug(`✅ Rendered page ${page.pageNumber}/${page.totalPages} for ${templateName}/${itemName}`);
     }
 
-    return true;
-  } catch (err) {
-    logger.error(`Failed to render template: ${templatePath}`, {
-      error: err.message,
-      stack: err.stack
-    });
-    throw err;
-  }
+    logger.info(`✨ Rendered ${pages.length} pages for ${templateName}/${itemName}`);
 }
-
+// core/renderer.js
 /**
- * Обработка пагинации
- * @param {Array} directives - Массив директив
- * @param {Function} template - Скомпилированный шаблон
- * @param {Object} data - Исходные данные
- * @param {string} outputDir - Целевая директория
- * @param {string} baseName - Базовое имя
+ * Генерация клиентских артефактов (данные для CSR)
+ * @param {string} dataPath - Путь к исходному JSON-файлу
+ * @param {string} templateName - Имя шаблона (catalog)
+ * @param {string} itemName - Имя элемента (books)
  */
-async function handlePagination(directives, template, data, outputDir, baseName) {
-  const paginateDirective = directives.find(d => d.command === 'paginate');
-  const {
-    collection = 'items',
-    perPage = config.pagination.defaultPerPage
-  } = paginateDirective.args;
+export async function generateClientArtifacts(dataPath, templateName, itemName) {
+    try {
+        // 1. Читаем данные
+        const dataContent = await fs.readFile(dataPath, 'utf8');
 
-  // Разбиваем коллекцию на страницы
-  const pages = paginateCollection(data, collection, perPage);
+        // 2. Формируем пути с использованием ПРАВИЛЬНЫХ параметров
+        const outputDataDir = path.join(config.output.data, templateName);
+        const outputDataPath = path.join(outputDataDir, `${itemName}.json`);
 
-  // Генерируем страницы
-  for (const page of pages) {
-    const pageData = preparePageData(data, page, page.pageNumber);
-    const html = template(pageData);
+        // 3. Создаем директории
+        await safeMkdir(outputDataDir);
 
-    // Определяем путь для страницы
-    const pageDir = path.join(outputDir, baseName, 'page');
-    const pagePath = path.join(pageDir, `${page.pageNumber}.html`);
+        // 4. Сохраняем данные с форматированием
+        const parsedData = JSON.parse(dataContent);
+        const formattedData = JSON.stringify(parsedData, null, 2);
+        await atomicWrite(outputDataPath, formattedData);
 
-    await safeMkdir(pageDir);
-    await atomicWrite(pagePath, html);
+        logger.info(`✅ Generated client data for ${templateName}/${itemName}.json`);
 
-    logger.debug(`Rendered page ${page.pageNumber} of ${page.totalPages}`, {
-      path: pagePath,
-      items: page.items.length
-    });
-  }
-
-  logger.info(`Rendered ${pages.length} pages for ${baseName}`, {
-    totalPages: pages.length,
-    itemsPerPage: perPage
-  });
-}
-
-/**
- * Генерация клиентских артефактов
- * @param {string} templatePath - Путь к шаблону
- * @param {string} dataPath - Путь к данным
- * @param {string} typeName - Тип контента (например, "catalog")
- * @param {string} itemName - Имя элемента (например, "books")
- */
-export async function generateClientArtifacts(templatePath, dataPath, typeName, itemName) {
-  try {
-    // Копирование шаблона для клиента
-    const templateContent = await fs.readFile(templatePath, 'utf8');
-    const clientTemplatePath = path.join(
-      config.output.templates,
-      typeName,
-      `${itemName}.hbs`
-    );
-    await safeMkdir(path.dirname(clientTemplatePath));
-    await atomicWrite(clientTemplatePath, templateContent);
-
-    // Копирование данных для клиента
-    const dataContent = await fs.readFile(dataPath, 'utf8');
-    const clientDataPath = path.join(
-      config.output.data,
-      typeName,
-      `${itemName}.json`
-    );
-    await safeMkdir(path.dirname(clientDataPath));
-    await atomicWrite(clientDataPath, dataContent);
-
-    logger.debug(`Generated client artifacts for ${typeName}/${itemName}`, {
-      template: clientTemplatePath,
-       clientDataPath
-    });
-
-    return true;
-  } catch (err) {
-    logger.error(`Failed to generate client artifacts`, {
-      error: err.message,
-      stack: err.stack
-    });
-    throw err;
-  }
+        return true;
+    } catch (err) {
+        logger.error(`❌ Failed to generate client artifacts for ${templateName}/${itemName}`, {
+            error: err.message,
+            stack: err.stack,
+            dataPath,
+            templateName,
+            itemName
+        });
+        throw err;
+    }
 }

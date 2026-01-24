@@ -83,27 +83,27 @@ export function compileTemplate(templateContent) {
 
 // Извлечение директив из шаблона
 export function parseDirectives(templateContent) {
-  const directives = [];
-  const directiveRegex = /{{!--\s*ignition:([\s\S]*?)\s*--}}/g;
-  let match;
+    const directives = [];
+    const directiveRegex = /{{!--\s*ignition:([\s\S]*?)\s*--}}/g;
+    let match;
 
-  while ((match = directiveRegex.exec(templateContent)) !== null) {
-    const directiveStr = match[1].trim();
-    const parts = directiveStr.split(/\s+/);
-    const command = parts[0];
-    const args = {};
+    while ((match = directiveRegex.exec(templateContent)) !== null) {
+        const directiveStr = match[1].trim();
+        const parts = directiveStr.split(/\s+/);
+        const command = parts[0];
+        const args = {};
 
-    for (let i = 1; i < parts.length; i++) {
-      const [key, value] = parts[i].split('=');
-      if (value) {
-        // Убираем кавычки, если есть
-        const cleanValue = value.replace(/^["']|["']$/g, '');
-        args[key] = isNaN(cleanValue) ? cleanValue : Number(cleanValue);
-      }
+        for (let i = 1; i < parts.length; i++) {
+            const [key, value] = parts[i].split('=');
+            if (value) {
+                // Обработка строковых и числовых значений
+                const cleanValue = value.replace(/^["']|["']$/g, '');
+                args[key] = isNaN(cleanValue) ? cleanValue : Number(cleanValue);
+            }
+        }
+
+        directives.push({ command, args });
     }
 
-    directives.push({ command, args });
-  }
-
-  return directives;
+    return directives;
 }

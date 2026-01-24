@@ -1,0 +1,38 @@
+<div class="catalog-grid">
+    {{#each items}}
+        <div class="product-card" data-product-id="{{id}}">
+            <h3>{{name}}</h3>
+            <p class="price">{{price}} ₽</p>
+            <p class="description">{{description}}</p>
+            <button class="buy-btn">Купить</button>
+        </div>
+    {{/each}}
+</div>
+
+<nav class="pagination">
+    {{#if pagination.hasPrev}}
+        <a href="/catalog/books/page/{{pagination.prevPage}}/"
+           data-page="{{pagination.prevPage}}"
+           aria-label="Предыдущая страница">
+            &laquo;
+        </a>
+    {{/if}}
+
+    {{#times pagination.totalPages}}
+        <a
+                href="/catalog/books/page/{{this}}/"
+                class="{{#ifCond this '==' ../pagination.currentPage}}active{{/ifCond}}"
+                data-page="{{this}}"
+                aria-label="Страница {{this}}">
+            {{this}}
+        </a>
+    {{/times}}
+
+    {{#if pagination.hasNext}}
+        <a href="/catalog/books/page/{{pagination.nextPage}}/"
+           data-page="{{pagination.nextPage}}"
+           aria-label="Следующая страница">
+            &raquo;
+        </a>
+    {{/if}}
+</nav>

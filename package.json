@@ -8,7 +8,7 @@
     "build": "node bin/cli.js build",
     "watch": "node bin/cli.js watch",
     "example": "node bin/cli.js --source input --output output",
-    "serve": "npx http-server output/html -o",
+    "serve": "npx http-server output/public -o",
     "dev": "npm-run-all --parallel watch serve"
   },
   "dependencies": {

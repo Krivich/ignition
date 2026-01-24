@@ -11,21 +11,23 @@ const projectRoot = path.resolve(__dirname, '..', '..'); // Корень про�
  * @param {string} dirPath - Путь к директории
  * @throws {Error} Если путь выходит за пределы проекта
  */
-export async function safeMkdir(dirPath, rootPath = projectRoot) {
-  // Если путь уже абсолютный, используем его напрямую
-  const resolvedPath = path.isAbsolute(dirPath) ? dirPath : path.resolve(rootPath, dirPath);
+export async function safeMkdir(dirPath, projectRoot = process.cwd()) {
+    // Нормализуем путь и убираем абсолютные пути
+    const cleanPath = path.normalize(dirPath).replace(/^(\.\.(\/|\\|$))+/, '');
+    const resolvedPath = path.resolve(projectRoot, cleanPath);
 
-  // Проверяем, что путь не выходит за пределы rootPath, если это не абсолютный путь
-  if (!path.isAbsolute(dirPath) && !resolvedPath.startsWith(path.resolve(rootPath))) {
-    throw new Error(`Path traversal detected: ${dirPath}`);
-  }
+    // Проверяем path traversal
+    const safeRoot = path.resolve(projectRoot);
+    if (!resolvedPath.startsWith(safeRoot + path.sep)) {
+        throw new Error(`Path traversal detected: ${dirPath} → ${resolvedPath}`);
+    }
 
-  try {
-    await fs.mkdir(resolvedPath, { recursive: true });
-    logger.debug(`Created directory: ${resolvedPath}`);
-  } catch (err) {
-    if (err.code !== 'EEXIST') throw err;
-  }
+    try {
+        await fs.mkdir(resolvedPath, { recursive: true });
+        logger.debug(`📁 Created directory: ${resolvedPath}`);
+    } catch (err) {
+        if (err.code !== 'EEXIST') throw err;
+    }
 }
 
 /**

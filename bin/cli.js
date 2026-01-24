@@ -1,8 +1,9 @@
-#!/usr/bin/env node
+// bin/cli.js
 import { Command } from 'commander';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { cleanupTmp } from '../utils/fs.js';
+import fs from 'fs/promises'; // <-- КРИТИЧЕСКИ ВАЖНЫЙ ИМПОРТ
+import {cleanupTmp, safeMkdir} from '../utils/fs.js';
 import { RenderQueue } from '../core/queue.js';
 import { generateSitemap } from '../core/sitemap.js';
 import config from '../config/default.js';
@@ -54,27 +55,33 @@ program.option(
 
 // Обработка опций
 program.hook('preAction', (command) => {
-  const opts = command.opts();
+    const opts = command.opts();
 
-  appConfig = {
-    ...appConfig,
-    source: {
-      templates: path.resolve(opts.source, 'templates'),
-      data: path.resolve(opts.source, 'data')
-    },
-    output: {
-      html: path.resolve(opts.output, 'html'),
-      templates: path.resolve(opts.output, 'templates'),
-      data: path.resolve(opts.output, 'data')
-    },
-    tmpDir: path.resolve(opts.source, '..', 'tmp'),
-    domain: opts.domain
-  };
+    // Определяем базовый путь для output
+    const outputBase = path.resolve(opts.output);
 
-  // Обновление конфигурации в модулях
-  config.source = appConfig.source;
-  config.output = appConfig.output;
-  config.tmpDir = appConfig.tmpDir;
+    appConfig = {
+        ...appConfig,
+        source: {
+            templates: path.resolve(opts.source, 'templates'),
+            data: path.resolve(opts.source, 'data')
+        },
+        output: {
+            public: path.join(outputBase, 'public'),
+            html: path.join(outputBase, 'public'), // html = public
+            templates: path.join(outputBase, 'public', 'templates'),
+            data: path.join(outputBase, 'public', 'data'),
+            assets: path.join(outputBase, 'public', 'assets') // <-- ЯВНО ДОБАВЛЯЕМ
+        },
+        tmpDir: path.resolve(opts.source, '..', 'tmp'),
+        domain: opts.domain
+    };
+
+    // Обновляем глобальную конфигурацию
+    config.source = appConfig.source;
+    config.output = appConfig.output;
+    config.tmpDir = appConfig.tmpDir;
+    config.domain = appConfig.domain;
 });
 
 // Запуск сборки
@@ -84,6 +91,9 @@ async function runBuild() {
   try {
     // Очистка временных файлов
     await cleanupTmp(appConfig.tmpDir);
+
+    // Копируем универсальные ассеты ПЕРЕД рендерингом
+    await copyUniversalAssets();
 
     // Создание очереди и запуск обработки
     const queue = new RenderQueue();
@@ -106,6 +116,9 @@ async function runWatch() {
 
   try {
     await cleanupTmp(appConfig.tmpDir);
+
+    // Копируем универсальные ассеты ПЕРЕД рендерингом
+    await copyUniversalAssets();
 
     const queue = new RenderQueue();
 
@@ -136,6 +149,29 @@ async function runWatch() {
     logger.error('Watch mode failed', { error: err.message });
     process.exit(1);
   }
+}
+
+async function copyUniversalAssets() {
+    const assets = [
+        {
+            src: path.join(__dirname, '..', 'core', 'assets', 'ignition-pagination.js'),
+            // Теперь копируем в public/assets/
+            dest: path.join(config.output.assets, 'ignition-pagination.js')
+        }
+    ];
+
+    for (const asset of assets) {
+        try {
+            await safeMkdir(path.dirname(asset.dest));
+            await fs.copyFile(asset.src, asset.dest);
+
+            // Логируем относительный путь от корня проекта
+            const relativePath = path.relative(process.cwd(), asset.dest).replace(/\\/g, '/');
+            logger.info(`✅ Copied universal asset: ${relativePath}`);
+        } catch (err) {
+            logger.error(`❌ Failed to copy asset: ${asset.src}`, { error: err.message });
+        }
+    }
 }
 
 // Запуск CLI

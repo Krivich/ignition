@@ -5,7 +5,7 @@ import chokidar from 'chokidar';
 import PQueue from 'p-queue';
 import debounce from 'lodash.debounce';
 import logger from '../utils/logger.js';
-import { renderTemplate, generateClientArtifacts } from './renderer.js';
+import { renderTemplate } from './renderer.js';
 import { safeReadJson, safeMkdir } from '../utils/fs.js';
 import config from '../config/default.js';
 
@@ -120,54 +120,68 @@ export class RenderQueue extends EventEmitter {
     }
   }
 
-  async scanTemplates() {
-    const templates = {};
-    try {
-      const files = await fs.readdir(config.source.templates, { withFileTypes: true });
+    // core/queue.js
+    async scanTemplates() {
+        const templates = {};
+        try {
+            const files = await fs.readdir(config.source.templates, { withFileTypes: true });
 
-      for (const file of files) {
-        if (file.isFile() && file.name.endsWith('.hbs')) {
-          const name = path.basename(file.name, '.hbs');
-          templates[name] = path.join(config.source.templates, file.name);
+            for (const file of files) {
+                if (file.isFile() && file.name.endsWith('.hbs')) {
+                    // Имя шаблона = имя файла без расширения
+                    const name = path.basename(file.name, '.hbs');
+                    templates[name] = path.join(config.source.templates, file.name);
+
+                    logger.debug(`🔍 Found template: ${name} at ${file.name}`);
+                }
+            }
+        } catch (err) {
+            if (err.code !== 'ENOENT') {
+                logger.error('❌ Error scanning templates', { error: err.message });
+                throw err;
+            }
         }
-      }
-    } catch (err) {
-      if (err.code !== 'ENOENT') {
-        logger.error('Error scanning templates', { error: err.message });
-        throw err;
-      }
+
+        return templates;
     }
 
-    return templates;
-  }
+    async processTask(task) {
+        const { templateName, templatePath, dataFile, itemName, taskId } = task;
 
-  async processTask(task) {
-    const { templateName, templatePath, dataFile, itemName, taskId } = task;
+        logger.info(`🛠️ Processing task: ${taskId} (${templateName}/${itemName})`);
 
-    logger.info(`Processing task: ${taskId}`);
+        try {
+            // Чтение данных
+            const data = await safeReadJson(dataFile);
 
-    try {
-      // Чтение данных
-      const data = await safeReadJson(dataFile);
+            // Определение выходных директорий
+            const htmlOutputDir = path.join(config.output.html, templateName);
 
-      // Определение выходных директорий
-      const htmlOutputDir = path.join(config.output.html, templateName);
-      const typeName = templateName;
+            // КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: передаем templateName в renderTemplate
+            await renderTemplate(
+                templatePath,
+                data,
+                htmlOutputDir,
+                itemName,
+                templateName // <-- ПРАВИЛЬНОЕ ИМЯ ШАБЛОНА
+            );
 
-      // Рендеринг
-      await renderTemplate(templatePath, data, htmlOutputDir, itemName);
+            const { generateClientArtifacts } = await import('./renderer.js');
+            // Генерация клиентских артефактов
+            await generateClientArtifacts(dataFile, templateName, itemName);
 
-      // Генерация клиентских артефактов
-      await generateClientArtifacts(templatePath, dataFile, typeName, itemName);
 
-      logger.info(`Successfully processed: ${taskId}`);
-      this.emit('task:success', taskId);
-    } catch (err) {
-      logger.error(`Failed to process task: ${taskId}`, { error: err.message });
-      this.emit('task:error', taskId, err);
-      throw err;
+            logger.info(`✅ Successfully processed: ${taskId}`);
+            this.emit('task:success', taskId);
+        } catch (err) {
+            logger.error(`❌ Failed to process task: ${taskId}`, {
+                error: err.message,
+                stack: err.stack
+            });
+            this.emit('task:error', taskId, err);
+            throw err;
+        }
     }
-  }
 
   async close() {
     this.watcher?.close();
