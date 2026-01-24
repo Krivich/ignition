@@ -1,0 +1,14 @@
+{{!--
+  Системный partial для пагинации.
+  Автоматически генерирует правильные пути на основе контекста.
+--}}
+<div
+        id="ignition-pagination-{{pagination.currentPage}}"
+        data-ignition-pagination='{{json paginationConfig}}'
+>
+    {{> (concat pageTemplate)
+            items=pagination.items
+            pagination=pagination
+            basePath=(concat "/" layout "/" dataset "/page/")
+    }}
+</div>

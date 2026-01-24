@@ -27,10 +27,11 @@ class IgnitionPagination {
         this.data = await this.fetchJson(this.config.dataUrl);
 
         // 2. Загружаем и компилируем шаблон
+        // Теперь templateUrl содержит полный путь: /templates/catalog/page.hbs
         const templateSource = await this.fetchTemplate(this.config.templateUrl);
         this.template = Handlebars.compile(templateSource);
 
-        // 3. Регистрируем базовые хелперы (только если их нет)
+        // 3. Регистрируем хелперы (уже есть, не меняем)
         this.registerCoreHelpers();
 
         // 4. Настраиваем обработчики
@@ -44,8 +45,20 @@ class IgnitionPagination {
     }
 
     async fetchTemplate(url) {
+        // URL уже содержит правильный путь
         const response = await fetch(url);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+            // Если шаблон не найден, пытаемся загрузить шаблон по умолчанию
+            if (response.status === 404) {
+                const fallbackUrl = url.replace(/\/page\.hbs$/, '/pagination.hbs');
+                const fallbackResponse = await fetch(fallbackUrl);
+                if (fallbackResponse.ok) {
+                    logger.warn(`Using fallback template: ${fallbackUrl}`);
+                    return await fallbackResponse.text();
+                }
+            }
+            throw new Error(`HTTP ${response.status} for ${url}`);
+        }
         return await response.text();
     }
 

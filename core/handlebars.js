@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import logger from '../utils/logger.js';
 import deepGet from '../utils/deepGet.js';
 import config from '../config/default.js';
+import {parseHandlebarsParams} from "./renderer.js";
 
 // Регистрация системных partials
 export async function registerCorePartials() {
@@ -87,6 +88,11 @@ export function registerHelpers() {
         return five;
     });
 
+    // Хелпер для безопасного JSON в атрибутах
+    Handlebars.registerHelper('json', function(context) {
+        return new Handlebars.SafeString(JSON.stringify(context));
+    });
+
     logger.debug('Registered Handlebars helpers');
 }
 
@@ -97,29 +103,23 @@ export function compileTemplate(templateContent) {
     return Handlebars.compile(cleanTemplate);
 }
 
-// Извлечение директив из шаблона
-export function parseDirectives(templateContent) {
-    const directives = [];
-    const directiveRegex = /{{!--\s*ignition:([\s\S]*?)\s*--}}/g;
+export function detectPaginationInTemplate(templateContent) {
+    // Ищем вызовы нашего системного partial
+    const paginationRegex = /{{>\s*ignition\/pagination\s+([^}]*)}}/g;
+    const matches = [];
     let match;
 
-    while ((match = directiveRegex.exec(templateContent)) !== null) {
-        const directiveStr = match[1].trim();
-        const parts = directiveStr.split(/\s+/);
-        const command = parts[0];
-        const args = {};
-
-        for (let i = 1; i < parts.length; i++) {
-            const [key, value] = parts[i].split('=');
-            if (value) {
-                // Обработка строковых и числовых значений
-                const cleanValue = value.replace(/^["']|["']$/g, '');
-                args[key] = isNaN(cleanValue) ? cleanValue : Number(cleanValue);
-            }
-        }
-
-        directives.push({command, args});
+    while ((match = paginationRegex.exec(templateContent)) !== null) {
+        const paramsStr = match[1].trim();
+        const params = parseHandlebarsParams(paramsStr);
+        matches.push({
+            enabled: true,
+            collection: params.collection || 'items',
+            perPage: params.perPage || 10,
+            template: params.template || 'pagination',
+            fullTemplatePath: params.fullTemplatePath || 'page'
+        });
     }
 
-    return directives;
+    return matches.length > 0 ? matches[0] : { enabled: false };
 }

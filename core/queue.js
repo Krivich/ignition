@@ -48,25 +48,29 @@ export class RenderQueue extends EventEmitter {
     this.debouncedProcess();
   }
 
-  async processQueue() {
-    if (this.processing.size > 0) {
-      logger.debug('Queue processing already in progress');
-      return;
-    }
+    async processQueue() {
+        if (this.processing.size > 0) return;
 
-    logger.info('Starting queue processing');
-    this.emit('processing:start');
+        logger.info('Starting queue processing');
+        this.emit('processing:start');
 
-    try {
-      // Сбор всех шаблонов
-      const templates = await this.scanTemplates();
+        try {
+            // Просто читаем все файлы в директориях
+            const templateFiles = await fs.readdir(config.source.templates, { withFileTypes: true });
+            const templates = templateFiles
+                .filter(f => f.isFile() && f.name.endsWith('.hbs'))
+                .reduce((acc, f) => {
+                    const name = path.basename(f.name, '.hbs');
+                    acc[name] = path.join(config.source.templates, f.name);
+                    return acc;
+                }, {});
       const tasks = [];
 
-      for (const [templateName, templatePath] of Object.entries(templates)) {
+      for (const [layout, templatePath] of Object.entries(templates)) {
         // Поиск соответствующих данных
         const dataPath = path.join(
           config.source.data,
-          templateName,
+          layout,
           '*.json'
         );
 
@@ -76,22 +80,22 @@ export class RenderQueue extends EventEmitter {
             .map(f => path.join(path.dirname(dataPath), f.name)));
 
           for (const dataFile of dataFiles) {
-            const itemName = path.basename(dataFile, '.json');
-            const taskId = `${templateName}/${itemName}`;
+            const dataset = path.basename(dataFile, '.json');
+            const taskId = `${layout}/${dataset}`;
 
             if (this.processing.has(taskId)) continue;
 
             tasks.push({
-              templateName,
+              layout,
               templatePath,
               dataFile,
-              itemName,
+              dataset,
               taskId
             });
           }
         } catch (err) {
           if (err.code !== 'ENOENT') {
-            logger.error(`Error scanning data for ${templateName}`, { error: err.message });
+            logger.error(`Error scanning data for ${layout}`, { error: err.message });
           }
         }
       }
@@ -120,61 +124,39 @@ export class RenderQueue extends EventEmitter {
     }
   }
 
-    // core/queue.js
-    async scanTemplates() {
-        const templates = {};
-        try {
-            const files = await fs.readdir(config.source.templates, { withFileTypes: true });
 
-            for (const file of files) {
-                if (file.isFile() && file.name.endsWith('.hbs')) {
-                    // Имя шаблона = имя файла без расширения
-                    const name = path.basename(file.name, '.hbs');
-                    templates[name] = path.join(config.source.templates, file.name);
-
-                    logger.debug(`🔍 Found template: ${name} at ${file.name}`);
-                }
-            }
-        } catch (err) {
-            if (err.code !== 'ENOENT') {
-                logger.error('❌ Error scanning templates', { error: err.message });
-                throw err;
-            }
-        }
-
-        return templates;
-    }
 
     async processTask(task) {
-        const { templateName, templatePath, dataFile, itemName, taskId } = task;
+        const { layout, templatePath, dataFile, dataset, taskId } = task;
 
-        logger.info(`🛠️ Processing task: ${taskId} (${templateName}/${itemName})`);
+        logger.info(`🛠️ Processing task: ${taskId} (${layout}/${dataset})`);
 
         try {
             // Чтение данных
             const data = await safeReadJson(dataFile);
 
-            // Добавляем itemName в контекст для шаблонов
+            // Добавляем dataset в контекст для шаблонов
             const enhancedData = {
                 ...data,
-                itemName: itemName
+                dataset: dataset,
+                layout: layout
             };
 
             // Определение выходных директорий
-            const htmlOutputDir = path.join(config.output.html, templateName);
+            const htmlOutputDir = path.join(config.output.html, layout);
 
-            // КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: передаем templateName в renderTemplate
+            // КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: передаем layout в renderTemplate
             await renderTemplate(
                 templatePath,
                 enhancedData,
                 htmlOutputDir,
-                itemName,
-                templateName // <-- ПРАВИЛЬНОЕ ИМЯ ШАБЛОНА
+                dataset,
+                layout // <-- ПРАВИЛЬНОЕ ИМЯ ШАБЛОНА
             );
 
             const { generateClientArtifacts } = await import('./renderer.js');
             // Генерация клиентских артефактов
-            await generateClientArtifacts(dataFile, templateName, itemName);
+            await generateClientArtifacts(dataFile, layout, dataset);
 
 
             logger.info(`✅ Successfully processed: ${taskId}`);

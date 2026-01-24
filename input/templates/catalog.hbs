@@ -1,18 +1,16 @@
-{{!-- ignition:paginate collection="products" perPage=2 csrTemplate="pagination" --}}
-
 <!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{title}} - {{itemName}}</title>
+    <title>{{title}} - {{dataset}}</title>
 
     {{!-- SEO-совместимые ссылки --}}
     {{#if pagination.hasPrev}}
-        <link rel="prev" href="/catalog/{{itemName}}/page/{{pagination.prevPage}}">
+        <link rel="prev" href="/catalog/{{dataset}}/page/{{pagination.prevPage}}">
     {{/if}}
     {{#if pagination.hasNext}}
-        <link rel="next" href="/catalog/{{itemName}}/page/{{pagination.nextPage}}">
+        <link rel="next" href="/catalog/{{dataset}}/page/{{pagination.nextPage}}">
     {{/if}}
 
     <script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js"></script>
@@ -74,19 +72,13 @@
 </header>
 
 <main>
-    <div
-            id="catalog-container"
-            data-ignition-pagination='{
-                "collection": "products",
-                "perPage": 2,
-                "dataUrl": "/data/catalog/{{itemName}}.json",
-                "templateUrl": "/templates/catalog/pagination.hbs",
-                "currentPage": {{pagination.currentPage}},
-                "basePath": "/catalog/{{itemName}}/page"
-            }'
-    >
-        {{> catalog/pagination items=pagination.items pagination=pagination basePath="/catalog/{{itemName}}/page"}}
-    </div>
+    {{> ignition/pagination
+            collection="products"
+            perPage=2
+            pageTemplate="catalog/page"
+            layout=layout
+            dataset=dataset
+    }}
 
     <div class="dynamic-content" id="dynamic-content">
         <p>Этот контент будет обновлен динамически через CSR после загрузки страницы.</p>
