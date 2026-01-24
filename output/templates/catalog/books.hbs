@@ -1,0 +1,180 @@
+{{!-- ignition:paginate collection="products" perPage=2 --}}
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{title}} - Каталог</title>
+  <script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js"></script>
+  <style>
+    .catalog-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 2rem;
+      margin: 2rem 0;
+    }
+    .product-card {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 1.5rem;
+      transition: transform 0.2s;
+    }
+    .product-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+    }
+    .pagination {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      margin: 2rem 0;
+    }
+    .pagination a {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      border: 1px solid #0066cc;
+      border-radius: 4px;
+      color: #0066cc;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .pagination a.active {
+      background-color: #0066cc;
+      color: white;
+    }
+    .pagination a:hover:not(.active) {
+      background-color: #f0f8ff;
+    }
+    .dynamic-content {
+      margin-top: 2rem;
+      padding: 1.5rem;
+      border: 1px dashed #0066cc;
+      border-radius: 8px;
+      min-height: 100px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>{{title}}</h1>
+  </header>
+
+  <main>
+    <div class="catalog-grid">
+      {{#each pagination.items}}
+        {{> core/card item=this}}
+      {{/each}}
+    </div>
+
+    <nav class="pagination">
+      {{#if pagination.hasPrev}}
+        <a href="./{{pagination.prevPage}}.html" data-page="{{pagination.prevPage}}">&laquo;</a>
+      {{/if}}
+
+      {{#times pagination.totalPages}}
+        <a
+          href="./{{this}}.html"
+          class="{{#ifCond this '==' ../pagination.currentPage}}active{{/ifCond}}"
+          data-page="{{this}}"
+        >
+          {{this}}
+        </a>
+      {{/times}}
+
+      {{#if pagination.hasNext}}
+        <a href="./{{pagination.nextPage}}.html" data-page="{{pagination.nextPage}}">&raquo;</a>
+      {{/if}}
+    </nav>
+
+    <div class="dynamic-content" id="dynamic-content">
+      <p>Этот контент будет обновлен динамически через CSR после загрузки страницы.</p>
+    </div>
+  </main>
+
+  <script id="dynamic-template" type="text/x-handlebars-template">
+    <div class="user-section">
+      {{#if user}}
+        <h3>Привет, {{user.name}}!</h3>
+        <p>У вас {{favorites.length}} товаров в избранном.</p>
+        <button id="toggle-favorite">Добавить в избранное</button>
+      {{else}}
+        <p>Войдите, чтобы управлять избранным</p>
+        <button id="login-btn">Войти</button>
+      {{/if}}
+    </div>
+  </script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', async () => {
+      // Инициализация клиентской логики
+      await initClientSide();
+
+      // Пример динамического обновления
+      const dynamicContent = document.getElementById('dynamic-content');
+      const templateSource = document.getElementById('dynamic-template').innerHTML;
+      const template = Handlebars.compile(templateSource);
+
+      // Имитация данных пользователя
+      const userData = {
+        user: {
+          name: 'Алексей',
+          favorites: [123, 456]
+        }
+      };
+
+      dynamicContent.innerHTML = template(userData);
+
+      // Обработчики для динамических элементов
+      document.getElementById('toggle-favorite')?.addEventListener('click', () => {
+        alert('Товар добавлен в избранное!');
+      });
+
+      document.getElementById('login-btn')?.addEventListener('click', () => {
+        alert('Редирект на страницу входа...');
+      });
+    });
+
+    async function initClientSide() {
+      // Настраиваем обработчики пагинации
+      document.querySelectorAll('.pagination a[data-page]').forEach(link => {
+        link.addEventListener('click', async (e) => {
+          e.preventDefault();
+          const page = link.dataset.page;
+          const url = link.href;
+
+          // Имитация CSR-обновления
+          await simulatePageLoad(page, url);
+        });
+      });
+    }
+
+    async function simulatePageLoad(page, url) {
+      // Показываем индикатор загрузки
+      document.body.style.cursor = 'wait';
+
+      try {
+        // В реальном приложении здесь был бы fetch запрос
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        // Обновляем URL без перезагрузки
+        history.pushState({ page }, `Page ${page}`, url);
+
+        // Здесь мы бы обновили контент через шаблон
+        console.log(`Loaded page ${page} via CSR`);
+
+        // Пример обновления пагинации
+        document.querySelectorAll('.pagination a').forEach(a => {
+          a.classList.toggle('active', a.dataset.page == page);
+        });
+
+      } finally {
+        document.body.style.cursor = 'default';
+      }
+    }
+  </script>
+</body>
+</html>

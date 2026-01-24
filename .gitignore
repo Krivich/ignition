@@ -1,0 +1,10 @@
+node_modules/
+tmp/
+logs/
+.idea/
+.qwen/
+*.iml
+package-lock.json
+QWEN.md
+output/*
+!output/templates/
