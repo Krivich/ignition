@@ -154,13 +154,19 @@ export class RenderQueue extends EventEmitter {
             // Чтение данных
             const data = await safeReadJson(dataFile);
 
+            // Добавляем itemName в контекст для шаблонов
+            const enhancedData = {
+                ...data,
+                itemName: itemName
+            };
+
             // Определение выходных директорий
             const htmlOutputDir = path.join(config.output.html, templateName);
 
             // КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: передаем templateName в renderTemplate
             await renderTemplate(
                 templatePath,
-                data,
+                enhancedData,
                 htmlOutputDir,
                 itemName,
                 templateName // <-- ПРАВИЛЬНОЕ ИМЯ ШАБЛОНА

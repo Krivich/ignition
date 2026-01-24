@@ -5,14 +5,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{title}} - Каталог</title>
+    <title>{{title}} - {{itemName}}</title>
 
-    {{!-- SEO-совместимые ссылки для поисковиков --}}
+    {{!-- SEO-совместимые ссылки --}}
     {{#if pagination.hasPrev}}
-        <link rel="prev" href="/catalog/books/page/{{pagination.prevPage}}/">
+        <link rel="prev" href="/catalog/{{itemName}}/page/{{pagination.prevPage}}">
     {{/if}}
     {{#if pagination.hasNext}}
-        <link rel="next" href="/catalog/books/page/{{pagination.nextPage}}/">
+        <link rel="next" href="/catalog/{{itemName}}/page/{{pagination.nextPage}}">
     {{/if}}
 
     <script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js"></script>
@@ -74,19 +74,18 @@
 </header>
 
 <main>
-    {{!-- Контейнер для пагинации с data-атрибутом для клиентской инициализации --}}
     <div
             id="catalog-container"
             data-ignition-pagination='{
-        "collection": "products",
-        "perPage": 2,
-        "dataUrl": "/data/catalog/books.json",
-        "templateUrl": "/templates/catalog/pagination.hbs",
-        "currentPage": {{pagination.currentPage}}
-      }'
+                "collection": "products",
+                "perPage": 2,
+                "dataUrl": "/data/catalog/{{itemName}}.json",
+                "templateUrl": "/templates/catalog/pagination.hbs",
+                "currentPage": {{pagination.currentPage}},
+                "basePath": "/catalog/{{itemName}}/page"
+            }'
     >
-        {{!-- SSR-рендеринг: используем тот же шаблон, что и для CSR --}}
-        {{> catalog/pagination items=pagination.items pagination=pagination}}
+        {{> catalog/pagination items=pagination.items pagination=pagination basePath="/catalog/{{itemName}}/page"}}
     </div>
 
     <div class="dynamic-content" id="dynamic-content">
@@ -94,12 +93,11 @@
     </div>
 </main>
 
-{{!-- Системные шаблоны для динамического контента --}}
 <script id="dynamic-template" type="text/x-handlebars-template">
     <div class="user-section">
     {{#if user}}
         <h3>Привет, {{user.name}}!</h3>
-        <p>У вас {{favorites.length}} товаров в избранном.</p>
+        <p>У вас {{favorites.length}} {{declineWord favorites.length "товар" "товара" "товаров"}} в избранном.</p>
         <button id="toggle-favorite">Добавить в избранное</button>
     {{else}}
         <p>Войдите, чтобы управлять избранным</p>
@@ -110,10 +108,20 @@
 
 <script>
     document.addEventListener('DOMContentLoaded', () => {
-        // Динамическое обновление контента (не связано с пагинацией)
+        // Динамическое обновление контента
         const dynamicContent = document.getElementById('dynamic-content');
         const templateSource = document.getElementById('dynamic-template').innerHTML;
         const template = Handlebars.compile(templateSource);
+
+        // Регистрация хелпера для склонения слов
+        Handlebars.registerHelper('declineWord', function(count, one, two, five) {
+            count = Math.abs(count) % 100;
+            const n1 = count % 10;
+            if (count > 10 && count < 20) return five;
+            if (n1 > 1 && n1 < 5) return two;
+            if (n1 === 1) return one;
+            return five;
+        });
 
         const userData = {
             user: {
@@ -124,7 +132,7 @@
 
         dynamicContent.innerHTML = template(userData);
 
-        // Обработчики для динамических элементов
+        // Обработчики событий
         document.getElementById('toggle-favorite')?.addEventListener('click', () => {
             alert('Товар добавлен в избранное!');
         });

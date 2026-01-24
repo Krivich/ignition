@@ -11,7 +11,7 @@
 
 <nav class="pagination">
     {{#if pagination.hasPrev}}
-        <a href="/catalog/books/page/{{pagination.prevPage}}/"
+        <a href="{{basePath}}{{pagination.prevPage}}"
            data-page="{{pagination.prevPage}}"
            aria-label="Предыдущая страница">
             &laquo;
@@ -20,7 +20,7 @@
 
     {{#times pagination.totalPages}}
         <a
-                href="/catalog/books/page/{{this}}/"
+                href="{{basePath}}{{this}}"
                 class="{{#ifCond this '==' ../pagination.currentPage}}active{{/ifCond}}"
                 data-page="{{this}}"
                 aria-label="Страница {{this}}">
@@ -29,7 +29,7 @@
     {{/times}}
 
     {{#if pagination.hasNext}}
-        <a href="/catalog/books/page/{{pagination.nextPage}}/"
+        <a href="{{basePath}}{{pagination.nextPage}}"
            data-page="{{pagination.nextPage}}"
            aria-label="Следующая страница">
             &raquo;
