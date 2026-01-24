@@ -18,7 +18,7 @@ const logger = winston.createLogger({
   ]
 });
 
-// Обработка ошибок логирования
+// Logging error handling
 logger.on('error', (err) => {
   console.error('Logger error:', err);
 });

@@ -3,11 +3,11 @@ import logger from '../utils/logger.js';
 import config from '../config/default.js';
 
 /**
- * Разбивает коллекцию на страницы
- * @param {Object} data - Исходные данные
- * @param {string} collectionPath - Путь к коллекции (например, "items")
- * @param {number} perPage - Элементов на страницу
- * @returns {Array} Массив страниц
+ * Splits collection into pages
+ * @param {Object} data - Source data
+ * @param {string} collectionPath - Path to collection (e.g., "items")
+ * @param {number} perPage - Items per page
+ * @returns {Array} Array of pages
  */
 export function paginateCollection(data, collectionPath, perPage) {
   const collection = deepGet(data, collectionPath, []);
@@ -43,11 +43,11 @@ export function paginateCollection(data, collectionPath, perPage) {
 }
 
 /**
- * Подготавливает данные для рендеринга страницы
- * @param {Object} data - Исходные данные
- * @param {Object} page - Объект страницы
- * @param {number} currentPage - Номер текущей страницы
- * @returns {Object} Данные для шаблона
+ * Prepares data for page rendering
+ * @param {Object} data - Source data
+ * @param {Object} page - Page object
+ * @param {number} currentPage - Current page number
+ * @returns {Object} Data for template
  */
 export function preparePageData(data, page, currentPage) {
   return {

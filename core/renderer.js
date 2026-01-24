@@ -1,8 +1,8 @@
 // core/renderer.js
 import path from 'path';
-import fs from 'fs/promises'; // <-- Добавляем импорт
+import fs from 'fs/promises'; // <-- Adding import
 import { fileURLToPath } from 'url';
-import Handlebars from 'handlebars'; // <-- ЯВНЫЙ ИМПОРТ
+import Handlebars from 'handlebars'; // <-- EXPLICIT IMPORT
 import logger from '../utils/logger.js';
 import {
     safeMkdir,
@@ -19,25 +19,25 @@ import config from '../config/default.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Инициализация Handlebars
+// Initialize Handlebars
 await registerCorePartials();
 registerHelpers();
 
 export async function renderTemplate(templatePath, data, outputDir, dataset, layout) {
     try {
-        // 1. Читаем шаблон
+        // 1. Read template
         const templateContent = await fs.readFile(templatePath, 'utf8');
 
-        // 2. Обнаруживаем пагинацию
+        // 2. Detect pagination
         const paginationConfig = detectPaginationInTemplate(templateContent);
 
-        // 3. Читаем и регистрируем ВСЕ partials из шаблонов
+        // 3. Read and register ALL partials from templates
         await registerAllTemplatePartials(config.source.templates);
 
-        // 4. Компилируем шаблон
+        // 4. Compile template
         const template = Handlebars.compile(templateContent);
 
-        // 5. Обрабатываем пагинацию
+        // 5. Process pagination
         if (paginationConfig.enabled) {
             await handlePagination(
                 paginationConfig,
@@ -48,7 +48,7 @@ export async function renderTemplate(templatePath, data, outputDir, dataset, lay
                 layout
             );
         } else {
-            // Обычный рендеринг
+            // Regular rendering
             const html = template({ ...data, layout, dataset });
             const outputPath = path.join(outputDir, `${dataset}.html`);
             await safeMkdir(path.dirname(outputPath));
@@ -56,7 +56,7 @@ export async function renderTemplate(templatePath, data, outputDir, dataset, lay
             logger.info(`✅ Rendered single page: ${dataset}.html`);
         }
 
-        // 6. Копируем CSR-шаблон (если есть)
+        // 6. Copy CSR template (if exists)
         if (paginationConfig.enabled) {
             await copyCsrTemplate(layout, paginationConfig.template);
         }
@@ -111,7 +111,7 @@ async function copyCsrTemplate(layout, pageTemplate) {
     } catch (err) {
         if (err.code === 'ENOENT') {
             logger.warn(`⚠️ CSR template not found: ${sourcePath}`);
-            // Создаем заглушку для разработки
+            // Create a stub for development
             await safeMkdir(path.dirname(outputPath));
             await fs.writeFile(outputPath, '<div class="pagination-placeholder">Pagination template not found</div>');
             return false;
@@ -121,20 +121,20 @@ async function copyCsrTemplate(layout, pageTemplate) {
 }
 
 /**
- * Обработка пагинации с правильным контекстом
+ * Process pagination with correct context
  */
 async function handlePagination(config, template, data, outputDir, dataset, layout) {
     const pages = paginateCollection(data, config.collection, config.perPage);
 
     for (const page of pages) {
-        // Формируем конфиг для клиентской пагинации
+        // Form config for client-side pagination
         const paginationConfigForClient = {
             collection: config.collection,
             perPage: config.perPage,
             currentPage: page.pageNumber,
             totalPages: page.totalPages,
-            dataUrl: `/data/${layout}/${dataset}.json`, // Правильный путь к данным
-            templateUrl: `/templates/${config.fullTemplatePath}.hbs` // Полный путь к шаблону!
+            dataUrl: `/data/${layout}/${dataset}.json`, // Correct path to data
+            templateUrl: `/templates/${config.fullTemplatePath}.hbs` // Full path to template!
         };
 
         const pageData = {
@@ -142,7 +142,7 @@ async function handlePagination(config, template, data, outputDir, dataset, layo
             layout,
             dataset,
             pagination: preparePageData(data, page, page.pageNumber).pagination,
-            paginationConfig: paginationConfigForClient // Передаем в шаблон
+            paginationConfig: paginationConfigForClient // Pass to template
         };
 
         const html = template(pageData);
@@ -154,24 +154,24 @@ async function handlePagination(config, template, data, outputDir, dataset, layo
 
 // core/renderer.js
 /**
- * Генерация клиентских артефактов (данные для CSR)
- * @param {string} dataPath - Путь к исходному JSON-файлу
- * @param {string} layout - Имя шаблона (catalog)
- * @param {string} dataset - Имя элемента (books)
+ * Generate client artifacts (data for CSR)
+ * @param {string} dataPath - Path to source JSON file
+ * @param {string} layout - Template name (catalog)
+ * @param {string} dataset - Dataset name (books)
  */
 export async function generateClientArtifacts(dataPath, layout, dataset) {
     try {
-        // 1. Читаем данные
+        // 1. Read data
         const dataContent = await fs.readFile(dataPath, 'utf8');
 
-        // 2. Формируем пути с использованием ПРАВИЛЬНЫХ параметров
+        // 2. Form paths using CORRECT parameters
         const outputDataDir = path.join(config.output.data, layout);
         const outputDataPath = path.join(outputDataDir, `${dataset}.json`);
 
-        // 3. Создаем директории
+        // 3. Create directories
         await safeMkdir(outputDataDir);
 
-        // 4. Сохраняем данные с форматированием
+        // 4. Save data with formatting
         const parsedData = JSON.parse(dataContent);
         const formattedData = JSON.stringify(parsedData, null, 2);
         await atomicWrite(outputDataPath, formattedData);
@@ -202,13 +202,13 @@ export function parseHandlebarsParams(paramsStr) {
         params[key] = isNaN(value) ? value : Number(value);
     }
 
-    // Поддержка нового формата с fallback для обратной совместимости
+    // Support for new format with fallback for backward compatibility
     if (params.pageTemplate) {
         params.fullTemplatePath = params.pageTemplate; // "catalog/page"
         params.templateName = params.pageTemplate.split('/')[0]; // "catalog"
         params.template = params.pageTemplate.split('/')[1]; // "page"
     } else {
-        // Старый формат (для обратной совместимости)
+        // Old format (for backward compatibility)
         params.template = params.template || 'pagination';
         params.fullTemplatePath = `${params.layout || 'catalog'}/${params.template}`;
         params.templateName = params.layout || 'catalog';

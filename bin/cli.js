@@ -2,7 +2,7 @@
 import { Command } from 'commander';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import fs from 'fs/promises'; // <-- КРИТИЧЕСКИ ВАЖНЫЙ ИМПОРТ
+import fs from 'fs/promises'; // <-- CRITICAL IMPORT
 import {cleanupTmp, safeMkdir} from '../utils/fs.js';
 import { RenderQueue } from '../core/queue.js';
 import { generateSitemap } from '../core/sitemap.js';
@@ -12,7 +12,7 @@ import logger from '../utils/logger.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const program = new Command();
 
-// Загрузка конфигурации
+// Loading configuration
 let appConfig = { ...config };
 
 program
@@ -20,21 +20,21 @@ program
   .description('Atomic prerender engine for SSR/CSR content')
   .version('1.0.0');
 
-// Команда сборки
+// Build command
 program.command('build')
   .description('Build all templates once')
   .action(async () => {
     await runBuild();
   });
 
-// Команда отслеживания
+// Watch command
 program.command('watch')
   .description('Watch for changes and rebuild automatically')
   .action(async () => {
     await runWatch();
   });
 
-// Глобальные опции
+// Global options
 program.option(
   '-s, --source <path>',
   'Source directory for templates and data',
@@ -53,11 +53,11 @@ program.option(
   'https://example.com'
 );
 
-// Обработка опций
+// Options processing
 program.hook('preAction', (command) => {
     const opts = command.opts();
 
-    // Определяем базовый путь для output
+    // Determine base path for output
     const outputBase = path.resolve(opts.output);
 
     appConfig = {
@@ -71,35 +71,35 @@ program.hook('preAction', (command) => {
             html: path.join(outputBase, 'public'), // html = public
             templates: path.join(outputBase, 'public', 'templates'),
             data: path.join(outputBase, 'public', 'data'),
-            assets: path.join(outputBase, 'public', 'assets') // <-- ЯВНО ДОБАВЛЯЕМ
+            assets: path.join(outputBase, 'public', 'assets') // <-- EXPLICITLY ADDING
         },
         tmpDir: path.resolve(opts.source, '..', 'tmp'),
         domain: opts.domain
     };
 
-    // Обновляем глобальную конфигурацию
+    // Update global configuration
     config.source = appConfig.source;
     config.output = appConfig.output;
     config.tmpDir = appConfig.tmpDir;
     config.domain = appConfig.domain;
 });
 
-// Запуск сборки
+// Build startup
 async function runBuild() {
   logger.info('Starting Ignition build');
 
   try {
-    // Очистка временных файлов
+    // Clean up temporary files
     await cleanupTmp(appConfig.tmpDir);
 
-    // Копируем универсальные ассеты ПЕРЕД рендерингом
+    // Copy universal assets BEFORE rendering
     await copyUniversalAssets();
 
-    // Создание очереди и запуск обработки
+    // Create queue and start processing
     const queue = new RenderQueue();
     await queue.processQueue();
 
-    // Генерация sitemap
+    // Generate sitemap
     await generateSitemap(appConfig.domain);
 
     logger.info('Build completed successfully');
@@ -110,19 +110,19 @@ async function runBuild() {
   }
 }
 
-// Запуск отслеживания
+// Watch startup
 async function runWatch() {
   logger.info('Starting Ignition in watch mode');
 
   try {
     await cleanupTmp(appConfig.tmpDir);
 
-    // Копируем универсальные ассеты ПЕРЕД рендерингом
+    // Copy universal assets BEFORE rendering
     await copyUniversalAssets();
 
     const queue = new RenderQueue();
 
-    // Обработка событий
+    // Event processing
     queue.on('task:success', (taskId) => {
       logger.info(`Task completed: ${taskId}`);
     });
@@ -155,7 +155,7 @@ async function copyUniversalAssets() {
     const assets = [
         {
             src: path.join(__dirname, '..', 'core', 'assets', 'ignition-pagination.js'),
-            // Теперь копируем в public/assets/
+            // Now copying to public/assets/
             dest: path.join(config.output.assets, 'ignition-pagination.js')
         }
     ];
@@ -165,7 +165,7 @@ async function copyUniversalAssets() {
             await safeMkdir(path.dirname(asset.dest));
             await fs.copyFile(asset.src, asset.dest);
 
-            // Логируем относительный путь от корня проекта
+            // Log relative path from project root
             const relativePath = path.relative(process.cwd(), asset.dest).replace(/\\/g, '/');
             logger.info(`✅ Copied universal asset: ${relativePath}`);
         } catch (err) {
@@ -174,5 +174,5 @@ async function copyUniversalAssets() {
     }
 }
 
-// Запуск CLI
+// CLI startup
 program.parse();

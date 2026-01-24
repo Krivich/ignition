@@ -1,9 +1,9 @@
 /**
- * Безопасное извлечение значения по пути
- * @param {object} obj - Объект для поиска
- * @param {string} path - Путь в формате "a.b.c"
- * @param {*} defaultValue - Значение по умолчанию
- * @returns {*} Найденное значение или defaultValue
+ * Safe value extraction by path
+ * @param {object} obj - Object to search in
+ * @param {string} path - Path in format "a.b.c"
+ * @param {*} defaultValue - Default value
+ * @returns {*} Found value or defaultValue
  */
 export default function deepGet(obj, path, defaultValue = null) {
   if (!obj || typeof obj !== 'object' || !path) return defaultValue;

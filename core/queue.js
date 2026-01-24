@@ -20,7 +20,7 @@ export class RenderQueue extends EventEmitter {
   }
 
   initialize() {
-    // Отслеживание изменений в исходниках
+    // Tracking changes in source files
     this.watcher = chokidar.watch([
       config.source.templates,
       config.source.data
@@ -55,7 +55,7 @@ export class RenderQueue extends EventEmitter {
         this.emit('processing:start');
 
         try {
-            // Просто читаем все файлы в директориях
+            // Just read all files in directories
             const templateFiles = await fs.readdir(config.source.templates, { withFileTypes: true });
             const templates = templateFiles
                 .filter(f => f.isFile() && f.name.endsWith('.hbs'))
@@ -67,7 +67,7 @@ export class RenderQueue extends EventEmitter {
       const tasks = [];
 
       for (const [layout, templatePath] of Object.entries(templates)) {
-        // Поиск соответствующих данных
+        // Search for corresponding data
         const dataPath = path.join(
           config.source.data,
           layout,
@@ -100,7 +100,7 @@ export class RenderQueue extends EventEmitter {
         }
       }
 
-      // Обработка задач
+      // Process tasks
       for (const task of tasks) {
         this.processing.add(task.taskId);
 
@@ -132,30 +132,30 @@ export class RenderQueue extends EventEmitter {
         logger.info(`🛠️ Processing task: ${taskId} (${layout}/${dataset})`);
 
         try {
-            // Чтение данных
+            // Reading data
             const data = await safeReadJson(dataFile);
 
-            // Добавляем dataset в контекст для шаблонов
+            // Adding dataset to context for templates
             const enhancedData = {
                 ...data,
                 dataset: dataset,
                 layout: layout
             };
 
-            // Определение выходных директорий
+            // Determine output directories
             const htmlOutputDir = path.join(config.output.html, layout);
 
-            // КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: передаем layout в renderTemplate
+            // CRITICAL CHANGE: pass layout to renderTemplate
             await renderTemplate(
                 templatePath,
                 enhancedData,
                 htmlOutputDir,
                 dataset,
-                layout // <-- ПРАВИЛЬНОЕ ИМЯ ШАБЛОНА
+                layout // <-- CORRECT TEMPLATE NAME
             );
 
             const { generateClientArtifacts } = await import('./renderer.js');
-            // Генерация клиентских артефактов
+            // Generate client artifacts
             await generateClientArtifacts(dataFile, layout, dataset);
 
 

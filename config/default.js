@@ -13,7 +13,7 @@ export default {
         html: path.join(process.cwd(), 'output', 'public'), // html = public
         templates: path.join(process.cwd(), 'output', 'public', 'templates'),
         data: path.join(process.cwd(), 'output', 'public', 'data'),
-        assets: path.join(process.cwd(), 'output', 'public', 'assets') // <-- ЯВНОЕ ОПРЕДЕЛЕНИЕ
+        assets: path.join(process.cwd(), 'output', 'public', 'assets') // <-- EXPLICIT DEFINITION
     },
     tmpDir: path.join(process.cwd(), 'tmp'),
     domain: 'https://example.com',

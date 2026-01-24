@@ -4,19 +4,19 @@ import { fileURLToPath } from 'url';
 import logger from './logger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(__dirname, '..', '..'); // Корень проекта
+const projectRoot = path.resolve(__dirname, '..', '..'); // Project root
 
 /**
- * Безопасное создание директории
- * @param {string} dirPath - Путь к директории
- * @throws {Error} Если путь выходит за пределы проекта
+ * Safe directory creation
+ * @param {string} dirPath - Path to directory
+ * @throws {Error} If path is outside project boundaries
  */
 export async function safeMkdir(dirPath, projectRoot = process.cwd()) {
-    // Нормализуем путь и убираем абсолютные пути
+    // Normalize path and remove absolute paths
     const cleanPath = path.normalize(dirPath).replace(/^(\.\.(\/|\\|$))+/, '');
     const resolvedPath = path.resolve(projectRoot, cleanPath);
 
-    // Проверяем path traversal
+    // Check for path traversal
     const safeRoot = path.resolve(projectRoot);
     if (!resolvedPath.startsWith(safeRoot + path.sep)) {
         throw new Error(`Path traversal detected: ${dirPath} → ${resolvedPath}`);
@@ -31,10 +31,10 @@ export async function safeMkdir(dirPath, projectRoot = process.cwd()) {
 }
 
 /**
- * Атомарная запись файла
- * @param {string} filePath - Путь к файлу
- * @param {string|Buffer} content - Содержимое
- * @param {object} options - Дополнительные опции
+ * Atomic file write
+ * @param {string} filePath - Path to file
+ * @param {string|Buffer} content - Content
+ * @param {object} options - Additional options
  */
 export async function atomicWrite(filePath, content, options = {}) {
   const tmpPath = `${filePath}.tmp.${Date.now()}`;
@@ -50,9 +50,9 @@ export async function atomicWrite(filePath, content, options = {}) {
 }
 
 /**
- * Безопасное чтение JSON
- * @param {string} filePath - Путь к JSON-файлу
- * @returns {object} Разпарсенные данные
+ * Safe JSON reading
+ * @param {string} filePath - Path to JSON file
+ * @returns {object} Parsed data
  */
 export async function safeReadJson(filePath) {
   try {
@@ -65,8 +65,8 @@ export async function safeReadJson(filePath) {
 }
 
 /**
- * Очистка временных файлов при старте
- * @param {string} tmpDir - Директория временных файлов
+ * Cleanup temporary files on startup
+ * @param {string} tmpDir - Temporary files directory
  */
 export async function cleanupTmp(tmpDir) {
   try {

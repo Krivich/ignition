@@ -5,12 +5,12 @@ import logger from '../utils/logger.js';
 import config from '../config/default.js';
 
 /**
- * Генерация sitemap.xml
- * @param {string} domain - Домен для абсолютных URL
+ * Generate sitemap.xml
+ * @param {string} domain - Domain for absolute URLs
  */
 export async function generateSitemap(domain) {
   try {
-    // Сбор всех HTML-файлов
+    // Collect all HTML files
     const htmlFiles = await glob(`${config.output.html}/**/*.html`, {
       nodir: true,
       absolute: true
@@ -18,7 +18,7 @@ export async function generateSitemap(domain) {
 
     const now = new Date().toISOString();
     const urls = htmlFiles.map(filePath => {
-      // Преобразование пути к URL
+      // Convert path to URL
       const relativePath = path.relative(config.output.html, filePath);
       const urlPath = relativePath
         .replace(/\\/g, '/')
@@ -33,7 +33,7 @@ export async function generateSitemap(domain) {
       };
     });
 
-    // Формирование XML
+    // Generate XML
     const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${urls.map(url => `
@@ -45,12 +45,12 @@ ${urls.map(url => `
   </url>`).join('')}
 </urlset>`;
 
-    // Запись файла
+    // Write file
     const sitemapPath = path.join(config.output.html, 'sitemap.xml');
     await fs.mkdir(path.dirname(sitemapPath), { recursive: true });
     await fs.writeFile(sitemapPath, sitemap);
 
-    // Генерация robots.txt
+    // Generate robots.txt
     const robots = `User-agent: *
 Allow: /
 Sitemap: ${domain}/sitemap.xml`;

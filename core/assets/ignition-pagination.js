@@ -1,6 +1,6 @@
 /**
- * Ignition Pagination - универсальный скрипт для клиентской пагинации
- * Работает с ЛЮБЫМ шаблоном, имеющим data-ignition-pagination
+ * Ignition Pagination - universal script for client-side pagination
+ * Works with ANY template having data-ignition-pagination
  */
 class IgnitionPagination {
     constructor(container) {
@@ -23,18 +23,18 @@ class IgnitionPagination {
     }
 
     async init() {
-        // 1. Загружаем данные
+        // 1. Load data
         this.data = await this.fetchJson(this.config.dataUrl);
 
-        // 2. Загружаем и компилируем шаблон
-        // Теперь templateUrl содержит полный путь: /templates/catalog/page.hbs
+        // 2. Load and compile template
+        // Now templateUrl contains full path: /templates/catalog/page.hbs
         const templateSource = await this.fetchTemplate(this.config.templateUrl);
         this.template = Handlebars.compile(templateSource);
 
-        // 3. Регистрируем хелперы (уже есть, не меняем)
+        // 3. Register helpers (already exist, no change)
         this.registerCoreHelpers();
 
-        // 4. Настраиваем обработчики
+        // 4. Setup event listeners
         this.setupEventListeners();
     }
 
@@ -45,10 +45,10 @@ class IgnitionPagination {
     }
 
     async fetchTemplate(url) {
-        // URL уже содержит правильный путь
+        // URL already contains correct path
         const response = await fetch(url);
         if (!response.ok) {
-            // Если шаблон не найден, пытаемся загрузить шаблон по умолчанию
+            // If template not found, try to load default template
             if (response.status === 404) {
                 const fallbackUrl = url.replace(/\/page\.hbs$/, '/pagination.hbs');
                 const fallbackResponse = await fetch(fallbackUrl);
@@ -63,7 +63,7 @@ class IgnitionPagination {
     }
 
     registerCoreHelpers() {
-        // Регистрируем ТОЛЬКО если хелпер ещё не существует
+        // Register ONLY if helper doesn't exist yet
         if (!Handlebars.helpers.times) {
             Handlebars.registerHelper('times', function(n, block) {
                 if (typeof n !== 'number' || n <= 0) return '';
@@ -98,7 +98,7 @@ class IgnitionPagination {
                 const page = parseInt(pageLink.dataset.page, 10);
                 this.renderPage(page);
 
-                // Обновляем URL без перезагрузки
+                // Update URL without reload
                 const newUrl = pageLink.href;
                 history.pushState({ page }, `Page ${page}`, newUrl);
             }
@@ -114,23 +114,23 @@ class IgnitionPagination {
             const items = this.getItemsForPage(page);
             const paginationData = this.getPaginationData(page);
 
-            // Формируем данные для шаблона
+            // Form data for template
             const templateData = {
                 items,
                 pagination: paginationData
             };
 
-            // Рендерим HTML
+            // Render HTML
             const html = this.template(templateData);
 
-            // Атомарное обновление DOM
+            // Atomic DOM update
             const tempDiv = document.createElement('div');
             tempDiv.innerHTML = html;
             this.container.innerHTML = tempDiv.innerHTML;
 
             this.currentPage = page;
 
-            // Вызываем кастомное событие для внешних скриптов
+            // Trigger custom event for external scripts
             this.container.dispatchEvent(new CustomEvent('ignition:pageChange', {
                 detail: { page }
             }));
@@ -169,14 +169,14 @@ class IgnitionPagination {
     }
 }
 
-// Автоинициализация при загрузке DOM
+// Auto-initialization on DOM load
 document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('[data-ignition-pagination]').forEach(container => {
         new IgnitionPagination(container);
     });
 });
 
-// Экспортируем класс для расширения
+// Export class for extension
 if (typeof window !== 'undefined') {
     window.IgnitionPagination = IgnitionPagination;
 }

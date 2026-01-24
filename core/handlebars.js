@@ -6,7 +6,6 @@ import deepGet from '../utils/deepGet.js';
 import config from '../config/default.js';
 import {parseHandlebarsParams} from "./renderer.js";
 
-// Регистрация системных partials
 export async function registerCorePartials() {
     try {
         const partialsDir = config.corePartials;
@@ -28,9 +27,7 @@ export async function registerCorePartials() {
     }
 }
 
-// Регистрация кастомных хелперов
 export function registerHelpers() {
-    // Хелпер для итерации по диапазону
     Handlebars.registerHelper('times', function (n, block) {
         let accum = '';
         for (let i = 1; i <= n; ++i) {
@@ -39,7 +36,6 @@ export function registerHelpers() {
         return accum;
     });
 
-    // Условный хелпер для сравнения
     Handlebars.registerHelper('ifCond', function (v1, operator, v2, options) {
         switch (operator) {
             case '==':
@@ -67,18 +63,15 @@ export function registerHelpers() {
         }
     });
 
-    // Хелпер для получения значения по пути
     Handlebars.registerHelper('get', function (obj, path) {
         return deepGet(obj, path);
     });
 
 
-    // Хелпер для конкатенации строк
     Handlebars.registerHelper('concat', function () {
         return Array.prototype.slice.call(arguments, 0, -1).join('');
     });
 
-    // Хелпер для склонения слов (для русского языка)
     Handlebars.registerHelper('declineWord', function (count, one, two, five) {
         count = Math.abs(count) % 100;
         const n1 = count % 10;
@@ -88,7 +81,6 @@ export function registerHelpers() {
         return five;
     });
 
-    // Хелпер для безопасного JSON в атрибутах
     Handlebars.registerHelper('json', function(context) {
         return new Handlebars.SafeString(JSON.stringify(context));
     });
@@ -96,15 +88,14 @@ export function registerHelpers() {
     logger.debug('Registered Handlebars helpers');
 }
 
-// Компиляция шаблона с удалением директив
 export function compileTemplate(templateContent) {
-    // Удаляем ignition-директивы перед компиляцией
+    // Remove ignition directives before compilation
     const cleanTemplate = templateContent.replace(/{{!--\s*ignition:[\s\S]*?--}}/g, '');
     return Handlebars.compile(cleanTemplate);
 }
 
 export function detectPaginationInTemplate(templateContent) {
-    // Ищем вызовы нашего системного partial
+    // Look for calls to our system partial
     const paginationRegex = /{{>\s*ignition\/pagination\s+([^}]*)}}/g;
     const matches = [];
     let match;
