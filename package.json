@@ -1,5 +1,5 @@
 {
-  "name": "@kartotekh/ignition",
+  "name": "@kartotech/ignition",
   "version": "1.0.0",
   "description": "Atomic prerender engine for SSR/CSR content",
   "main": "bin/cli.js",
@@ -9,7 +9,9 @@
     "watch": "node bin/cli.js watch",
     "example": "node bin/cli.js --source input --output output",
     "serve": "npx http-server output/public -o",
-    "dev": "npm-run-all --parallel watch serve"
+    "dev": "npm-run-all --parallel watch serve",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "chokidar": "^3.5.3",
@@ -33,7 +35,10 @@
     "config/"
   ],
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "npm-run-all": "^4.1.5",
-    "serve": "^14.2.5"
+    "playwright": "^1.62.1",
+    "serve": "^14.2.5",
+    "vitest": "^4.1.11"
   }
 }
