@@ -20,6 +20,7 @@ describe('CSR pagination in real browser', () => {
 
   beforeAll(async () => {
     // 1. Build a site with pagination via CLI
+    await fs.mkdir(path.join(projectRoot, 'tmp'), { recursive: true });
     tmpDir = await fs.mkdtemp(path.join(projectRoot, 'tmp', 'csr-test-'));
     const inputDir = path.join(tmpDir, 'input');
     const templatesDir = path.join(inputDir, 'templates');

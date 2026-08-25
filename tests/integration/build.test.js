@@ -29,6 +29,7 @@ describe('Integration: Full build pipeline', () => {
 
   beforeEach(async () => {
     // Create tmp dir inside project so safeMkdir path traversal check passes
+    await fs.mkdir(path.join(projectRoot, 'tmp'), { recursive: true });
     tmpDir = await fs.mkdtemp(path.join(projectRoot, 'tmp', 'ignition-test-'));
     config.source.templates = path.join(tmpDir, 'input', 'templates');
     config.source.data = path.join(tmpDir, 'input', 'data');

@@ -37,6 +37,7 @@ describe('CLI: ignition build', () => {
   let tmpDir;
 
   beforeEach(async () => {
+    await fs.mkdir(path.join(projectRoot, 'tmp'), { recursive: true });
     tmpDir = await fs.mkdtemp(path.join(projectRoot, 'tmp', 'cli-test-'));
     const inputDir = path.join(tmpDir, 'input');
     const templatesDir = path.join(inputDir, 'templates');
