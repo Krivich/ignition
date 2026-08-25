@@ -3,10 +3,10 @@ import path from 'path';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 import os from 'os';
-import { renderTemplate, generateClientArtifacts, parseHandlebarsParams } from '../../core/renderer.js';
-import { paginateCollection, preparePageData } from '../../core/pagination.js';
-import { generateSitemap } from '../../core/sitemap.js';
-import { safeMkdir, atomicWrite, safeReadJson, cleanupTmp } from '../../utils/fs.js';
+import { renderTemplate, generateClientArtifacts, parseHandlebarsParams } from '../../engine/core/renderer.js';
+import { paginateCollection, preparePageData } from '../../engine/core/pagination.js';
+import { generateSitemap } from '../../engine/core/sitemap.js';
+import { safeMkdir, atomicWrite, safeReadJson, cleanupTmp } from '../../engine/utils/fs.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..', '..');

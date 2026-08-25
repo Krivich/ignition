@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import Handlebars from 'handlebars';
-import { registerHelpers, detectPaginationInTemplate, compileTemplate } from '../../core/handlebars.js';
-import { parseHandlebarsParams } from '../../core/renderer.js';
+import { registerHelpers, detectPaginationInTemplate, compileTemplate } from '../../engine/core/handlebars.js';
+import { parseHandlebarsParams } from '../../engine/core/renderer.js';
 
 // Register helpers before tests
 registerHelpers();

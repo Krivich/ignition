@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { paginateCollection, preparePageData } from '../../core/pagination.js';
+import { paginateCollection, preparePageData } from '../../engine/core/pagination.js';
 
 describe('paginateCollection', () => {
   const data = {

@@ -2,12 +2,12 @@
   "name": "@kartotech/ignition",
   "version": "1.0.0",
   "description": "Atomic prerender engine for SSR/CSR content",
-  "main": "bin/cli.js",
+  "main": "engine/bin/cli.js",
   "type": "module",
   "scripts": {
-    "build": "node bin/cli.js build",
-    "watch": "node bin/cli.js watch",
-    "example": "node bin/cli.js --source input --output output",
+    "build": "node engine/bin/cli.js build",
+    "watch": "node engine/bin/cli.js watch",
+    "example": "node engine/bin/cli.js --source input --output output",
     "serve": "npx http-server output/public -o",
     "dev": "npm-run-all --parallel watch serve",
     "test": "vitest run",
@@ -29,10 +29,7 @@
     "node": ">=18.0.0"
   },
   "files": [
-    "bin/",
-    "core/",
-    "utils/",
-    "config/"
+    "engine/"
   ],
   "devDependencies": {
     "@playwright/test": "^1.62.1",

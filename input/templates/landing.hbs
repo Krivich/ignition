@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{title}}</title>
+    <meta name="description" content="{{meta.description}}">
+    <meta name="keywords" content="{{meta.keywords}}">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Канонические URL -->
+    <link rel="canonical" href="/">
+    <!-- Open Graph для соцсетей -->
+    <meta property="og:title" content="{{title}}">
+    <meta property="og:description" content="{{meta.description}}">
+    <meta property="og:url" content="/">
+    <!-- JSON-LD для поисковых систем -->
+    <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "WebPage",
+          "name": "{{title}}",
+          "description": "{{meta.description}}",
+          "url": "/"
+        }
+    </script>
+    <meta name="robots" content="index, follow">
+    <script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js"></script>
+    <style>
+        :root {
+            --bg-dark: #121212;
+            --bg-card: #1E1E1E;
+            --accent: #E53935;
+            --text-primary: #FFFFFF;
+            --text-secondary: #E0E0E0;
+            --border-radius-sm: 6px;
+            --border-radius-md: 8px;
+            --section-padding: 60px 0;
+            --container-padding: 0 40px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Montserrat', sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            line-height: 1.5;
+            overflow-x: hidden;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: var(--container-padding);
+        }
+
+        .section {
+            padding: var(--section-padding);
+        }
+
+        .section-title {
+            font-size: 24px;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        /* Шапка */
+        .header {
+            padding: 80px 0 40px;
+        }
+
+        .header-content {
+            display: flex;
+            align-items: center;
+            gap: 40px;
+        }
+
+        .header-text {
+            flex: 1;
+            min-width: 300px;
+        }
+
+        .header-illustration {
+            flex: 1;
+            min-width: 300px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .header-title {
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            line-height: 1.2;
+        }
+
+        .header-subtitle {
+            font-size: 18px;
+            font-weight: 400;
+            color: var(--text-secondary);
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+
+        .btn {
+            display: inline-block;
+            background-color: var(--accent);
+            color: var(--text-primary);
+            font-size: 16px;
+            font-weight: 700;
+            text-decoration: none;
+            padding: 14px 24px;
+            border-radius: var(--border-radius-md);
+            margin-bottom: 40px;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(229, 57, 53, 0.3);
+        }
+
+        /* Преимущества */
+        .features-grid {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-top: 40px;
+        }
+
+        .feature-card {
+            background-color: var(--bg-card);
+            border-radius: var(--border-radius-md);
+            padding: 24px;
+            text-align: center;
+            flex: 0 0 calc(33.333% - 20px);
+            min-width: 280px;
+            transition: transform 0.3s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .feature-icon {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 60px;
+            height: 60px;
+            background-color: var(--accent);
+            border-radius: 50%;
+            margin: 0 auto 16px;
+            font-size: 24px;
+            color: var(--text-primary);
+        }
+
+        .feature-title {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+
+        .feature-text {
+            font-size: 16px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        /* Шаги */
+        .steps-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .results-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            width: 100%;
+        }
+
+        .result-item {
+            display: flex;
+            align-items: flex-start;
+            padding: 20px 0;
+            width: 100%;
+            transition: transform 0.3s;
+        }
+
+        .result-item:hover {
+            transform: translateX(5px);
+        }
+
+        .result-item:nth-child(odd) {
+            flex-direction: row;
+        }
+
+        .result-item:nth-child(even) {
+            flex-direction: row-reverse;
+        }
+
+        .result-item:nth-child(even) .result-number {
+            text-align: right;
+        }
+
+        .result-item:nth-child(even) .result-text {
+            text-align: right;
+            margin-left: 0;
+            margin-right: 10px;
+        }
+
+        .result-number {
+            font-size: 36px;
+            font-weight: 700;
+            color: var(--accent);
+            min-width: 80px;
+            display: flex;
+            align-items: center;
+        }
+
+        .result-text {
+            font-size: 18px;
+            line-height: 1.5;
+            flex: 1;
+            margin-left: 10px;
+        }
+
+        /* FAQ */
+        .faq-container {
+            max-width: 800px;
+            margin: 40px auto 0;
+        }
+
+        .faq-item {
+            background-color: var(--bg-card);
+            border-radius: var(--border-radius-sm);
+            margin-bottom: 12px;
+            overflow: hidden;
+        }
+
+        .faq-question {
+            padding: 16px 24px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .faq-question::after {
+            content: "+";
+            font-size: 24px;
+            transition: transform 0.3s;
+        }
+
+        .faq-item.active .faq-question::after {
+            content: "-";
+        }
+
+        .faq-answer {
+            padding: 0 24px;
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out, padding 0.3s ease-out;
+            color: var(--text-secondary);
+            font-size: 16px;
+            line-height: 1.6;
+        }
+
+        .faq-item.active .faq-answer {
+            padding: 0 24px 16px;
+            max-height: 500px;
+        }
+
+        /* Футер */
+        .footer {
+            text-align: center;
+            padding: 60px 0 80px;
+        }
+
+        .footer-content {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .footer-title {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 20px;
+        }
+
+        .footer-text {
+            font-size: 18px;
+            margin-bottom: 30px;
+            color: var(--text-secondary);
+        }
+
+        .footer-btn {
+            display: inline-block;
+            background-color: var(--accent);
+            color: var(--text-primary);
+            font-size: 16px;
+            font-weight: 700;
+            text-decoration: none;
+            padding: 14px 24px;
+            border-radius: var(--border-radius-md);
+            margin: 0 auto;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .footer-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(229, 57, 53, 0.3);
+        }
+
+        /* Адаптивность */
+        @media (max-width: 992px) {
+            .header-content {
+                flex-direction: column;
+            }
+
+            .result-item:nth-child(even),
+            .result-item:nth-child(odd) {
+                flex-direction: row;
+            }
+
+            .result-item:nth-child(even) .result-text {
+                text-align: left;
+                margin-right: 0;
+                margin-left: 10px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            :root {
+                --section-padding: 40px 0;
+                --container-padding: 0 20px;
+            }
+
+            .header-title {
+                font-size: 28px;
+            }
+
+            .feature-card {
+                flex: 1 0 100%;
+            }
+
+            .result-number {
+                font-size: 32px;
+                min-width: 60px;
+            }
+
+            .result-text {
+                font-size: 16px;
+            }
+        }
+
+        .dynamic-content {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            border: 1px dashed #E53935;
+            border-radius: 8px;
+            min-height: 100px;
+        }
+    </style>
+</head>
+<body>
+<!-- Шапка - двухколоночная верстка -->
+<header class="header section" id="header-section">
+    <div class="container">
+        <div class="header-content">
+            <div class="header-text">
+                <h1 class="header-title">{{introduce.title}}</h1>
+                <p class="header-subtitle">{{introduce.description}}</p>
+                <a href="{{introduce.button.link}}" class="btn">
+                    <span class="btn-icon">{{introduce.button.icon}}</span>
+                    <span class="btn-text">{{introduce.button.text}}</span>
+                </a>
+            </div>
+            <div class="header-illustration">
+                <div class="illustration-container undraw-illustration" style="max-width: 350px; width: 100%;">
+                    {{{illustration.svg}}}
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Преимущества -->
+<section class="section" id="features-section">
+    <div class="container">
+        <h2 class="section-title">{{benefits.title}}</h2>
+        <div class="features-grid">
+            {{#each benefits.items}}
+                <div class="feature-card">
+                    <div class="feature-icon">{{icon}}</div>
+                    <h3 class="feature-title">{{title}}</h3>
+                    <p class="feature-text">{{description}}</p>
+                </div>
+            {{/each}}
+        </div>
+    </div>
+</section>
+
+<!-- Шаги - змейка слева-справа -->
+<section class="section" id="steps-section">
+    <div class="container">
+        <h2 class="section-title">{{steps.title}}</h2>
+        <div class="steps-container">
+            <div class="results-grid">
+                {{#each steps.items}}
+                    <div class="result-item">
+                        <div class="result-number">{{number}}</div>
+                        <p class="result-text">{{text}}</p>
+                    </div>
+                {{/each}}
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- FAQ -->
+<section class="section" id="faq-section">
+    <div class="container">
+        <h2 class="section-title">{{faq.title}}</h2>
+        <div class="faq-container">
+            <div class="faq-list">
+                {{#each faq.items}}
+                    <div class="faq-item">
+                        <div class="faq-question">{{question}}</div>
+                        <div class="faq-answer">{{answer}}</div>
+                    </div>
+                {{/each}}
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Футер -->
+<footer class="footer" id="footer-section">
+    <div class="container">
+        <div class="footer-content">
+            <h2 class="footer-title">{{footer.title}}</h2>
+            <p class="footer-text">{{footer.description}}</p>
+            <a href="{{footer.button.link}}" class="footer-btn">
+                <span class="btn-icon">{{footer.button.icon}}</span>
+                <span class="btn-text">{{footer.button.text}}</span>
+            </a>
+        </div>
+    </div>
+</footer>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+
+        // Обработчик кнопки подключения Telegram
+        document.getElementById('connect-telegram')?.addEventListener('click', () => {
+            alert('Перенаправление на подключение Telegram бота...');
+        });
+
+        // Обработчик клика по вопросам FAQ
+        document.querySelectorAll('.faq-question').forEach(question => {
+            question.addEventListener('click', function() {
+                const faqItem = this.parentElement;
+                faqItem.classList.toggle('active');
+            });
+        });
+
+        // Плавная прокрутка
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                e.preventDefault();
+                const targetId = this.getAttribute('href');
+                if (targetId === '#') return;
+
+                const targetElement = document.querySelector(targetId);
+                if (targetElement) {
+                    window.scrollTo({
+                        top: targetElement.offsetTop - 20,
+                        behavior: 'smooth'
+                    });
+                }
+            });
+        });
+    });
+</script>
+</body>
+</html>

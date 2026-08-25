@@ -2,11 +2,11 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from
 import path from 'path';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
-import config from '../../config/default.js';
-import { renderTemplate, generateClientArtifacts } from '../../core/renderer.js';
-import { paginateCollection, preparePageData } from '../../core/pagination.js';
-import { detectPaginationInTemplate } from '../../core/handlebars.js';
-import { generateSitemap } from '../../core/sitemap.js';
+import config from '../../engine/config/default.js';
+import { renderTemplate, generateClientArtifacts } from '../../engine/core/renderer.js';
+import { paginateCollection, preparePageData } from '../../engine/core/pagination.js';
+import { detectPaginationInTemplate } from '../../engine/core/handlebars.js';
+import { generateSitemap } from '../../engine/core/sitemap.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..', '..');
@@ -81,7 +81,7 @@ describe('Integration: Full build pipeline', () => {
     // Copy system pagination partial to test templates
     const ignitionDir = path.join(templatesDir, 'ignition');
     await fs.mkdir(ignitionDir, { recursive: true });
-    const corePaginationSrc = path.resolve(projectRoot, 'core', 'partials', 'pagination.hbs');
+    const corePaginationSrc = path.resolve(projectRoot, 'engine', 'core', 'partials', 'pagination.hbs');
     await fs.copyFile(corePaginationSrc, path.join(ignitionDir, 'pagination.hbs'));
 
     // Main layout with pagination call
@@ -236,7 +236,7 @@ describe('Integration: Full build pipeline', () => {
 
   it('Handlebars template renders with pagination variables', async () => {
     const Handlebars = (await import('handlebars')).default;
-    const { registerHelpers } = await import('../../core/handlebars.js');
+    const { registerHelpers } = await import('../../engine/core/handlebars.js');
     registerHelpers();
 
     const template = Handlebars.compile(`

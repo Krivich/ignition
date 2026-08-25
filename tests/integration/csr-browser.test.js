@@ -9,7 +9,7 @@ import { promisify } from 'util';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..', '..');
-const cliPath = path.join(projectRoot, 'bin', 'cli.js');
+const cliPath = path.join(projectRoot, 'engine', 'bin', 'cli.js');
 const execFileAsync = promisify(execFile);
 
 describe('CSR pagination in real browser', () => {
@@ -32,7 +32,7 @@ describe('CSR pagination in real browser', () => {
     const ignitionDir = path.join(templatesDir, 'ignition');
     await fs.mkdir(ignitionDir, { recursive: true });
     await fs.copyFile(
-      path.join(projectRoot, 'core', 'partials', 'pagination.hbs'),
+      path.join(projectRoot, 'engine', 'core', 'partials', 'pagination.hbs'),
       path.join(ignitionDir, 'pagination.hbs')
     );
 

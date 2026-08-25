@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import deepGet from '../../utils/deepGet.js';
+import deepGet from '../../engine/utils/deepGet.js';
 
 describe('deepGet', () => {
   it('retrieves a top-level property', () => {

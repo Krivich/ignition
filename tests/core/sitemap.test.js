@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 import os from 'os';
-import { generateSitemap } from '../../core/sitemap.js';
+import { generateSitemap } from '../../engine/core/sitemap.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -22,15 +22,15 @@ describe('generateSitemap', () => {
     await fs.writeFile(path.join(tmpDir, 'landing', 'default.html'), '<h1>Landing</h1>');
 
     // Store original config values
-    originalHtml = (await import('../../config/default.js')).default.output.html;
+    originalHtml = (await import('../../engine/config/default.js')).default.output.html;
     // Temporarily override config
-    const config = (await import('../../config/default.js')).default;
+    const config = (await import('../../engine/config/default.js')).default;
     config.output.html = tmpDir;
   });
 
   afterEach(async () => {
     // Restore config
-    const config = (await import('../../config/default.js')).default;
+    const config = (await import('../../engine/config/default.js')).default;
     config.output.html = originalHtml;
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
