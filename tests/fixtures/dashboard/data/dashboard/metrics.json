@@ -1,0 +1,14 @@
+{
+  "metrics": {
+    "sales": [
+      { "date": "2026-08-01", "amount": 15000 },
+      { "date": "2026-08-02", "amount": 23000 },
+      { "date": "2026-08-03", "amount": 8000 }
+    ],
+    "loading": false,
+    "error": null
+  },
+  "ui": {
+    "period": "week"
+  }
+}

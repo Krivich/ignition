@@ -1,0 +1,13 @@
+{{#if metrics.loading}}
+    <div class="skeleton"></div>
+{{else}}
+    {{#each filteredSales}}
+        <div class="sale-item">
+            <span>{{date}}</span>
+            <span>{{amount}} ₽</span>
+        </div>
+    {{/each}}
+    {{#unless filteredSales.length}}
+        <p>Нет данных за выбранный период</p>
+    {{/unless}}
+{{/if}}

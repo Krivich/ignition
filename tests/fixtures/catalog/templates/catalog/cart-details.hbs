@@ -1,0 +1,12 @@
+{{#if items.length}}
+    <ul>
+        {{#each items}}
+            <li>
+                <span>{{name}} — {{price}} ₽</span>
+                <button data-ignition-on="click → cartRemove({{id}})">
+                    ✕
+                </button>
+            </li>
+        {{/each}}
+    </ul>
+{{/if}}

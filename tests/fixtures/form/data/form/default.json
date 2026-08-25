@@ -1,0 +1,12 @@
+{
+  "form": {
+    "fields": {
+      "name": "",
+      "email": "",
+      "message": ""
+    },
+    "errors": {},
+    "submitting": false,
+    "submitted": false
+  }
+}

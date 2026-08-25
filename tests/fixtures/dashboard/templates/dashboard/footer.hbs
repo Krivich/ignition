@@ -1,0 +1,7 @@
+{{#if metrics.loading}}
+    <div class="skeleton"></div>
+{{else}}
+    <div class="widget footer">
+        <p>Всего продаж: {{totalSales}} ₽ | Лучший день: {{bestDay.date}}</p>
+    </div>
+{{/if}}

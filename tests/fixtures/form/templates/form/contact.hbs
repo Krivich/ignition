@@ -1,0 +1,44 @@
+{{#if form.submitted}}
+    <div class="success">
+        <p>Спасибо! Мы ответим вам в ближайшее время.</p>
+        <button data-ignition-on="click → formReset">Отправить ещё раз</button>
+    </div>
+
+{{else if form.submitting}}
+    <div class="spinner">Отправка формы...</div>
+
+{{else}}
+    <form data-ignition-on="submit → formSubmit">
+        <div class="form-group">
+            <label for="name">Имя</label>
+            <input type="text" id="name"
+                   data-ignition-binding="form.fields.name"
+                   placeholder="Ваше имя">
+            {{#if form.errors.name}}
+                <div class="error">{{form.errors.name}}</div>
+            {{/if}}
+        </div>
+
+        <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" id="email"
+                   data-ignition-binding="form.fields.email"
+                   placeholder="your@email.com">
+            {{#if form.errors.email}}
+                <div class="error">{{form.errors.email}}</div>
+            {{/if}}
+        </div>
+
+        <div class="form-group">
+            <label for="message">Сообщение</label>
+            <textarea id="message" rows="4"
+                      data-ignition-binding="form.fields.message"
+                      placeholder="Ваше сообщение..."></textarea>
+            {{#if form.errors.message}}
+                <div class="error">{{form.errors.message}}</div>
+            {{/if}}
+        </div>
+
+        <button type="submit">Отправить</button>
+    </form>
+{{/if}}

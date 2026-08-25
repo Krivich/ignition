@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест: Форма обратной связи</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js"></script>
+    <script src="/assets/ignition-runtime.js"></script>
+    <script src="/assets/templates.js"></script>
+    <script>
+        window.__IGNITION_INITIAL_DATA__ = {{{initialData}}};
+    </script>
+
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; margin-bottom: 0.25rem; font-weight: bold; }
+        .form-group input, .form-group textarea { width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        .form-group input:focus, .form-group textarea:focus { outline: none; border-color: #0066cc; }
+        .error { color: #dc3545; font-size: 0.85em; margin-top: 0.25rem; }
+        .spinner { padding: 2rem; text-align: center; color: #888; }
+        .success { padding: 2rem; text-align: center; background: #d4edda; border-radius: 8px; }
+        button[type="submit"] { padding: 0.75rem 1.5rem; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button[type="submit"]:disabled { background: #ccc; cursor: not-allowed; }
+        button[type="submit"]:hover:not(:disabled) { background: #0055aa; }
+    </style>
+</head>
+<body>
+
+    <h1>Форма обратной связи (тест реактивности)</h1>
+
+    {{!-- ГРАБЛЬ #1: conditional rendering — три состояния --}}
+    <div data-ignition-block="form/contact"
+         data-ignition-depends="form">
+    </div>
+
+</body>
+</html>

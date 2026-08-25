@@ -1,0 +1,15 @@
+<div class="catalog-grid">
+    {{#each items}}
+        <div class="product-card">
+            <h3>{{name}}</h3>
+            <p class="price">{{price}} ₽</p>
+            <span class="category">{{category}}</span>
+            <button data-ignition-on="click → cartAdd({{id}}, {{price}}, '{{name}}')">
+                В корзину
+            </button>
+        </div>
+    {{/each}}
+    {{#unless items.length}}
+        <p class="empty">Ничего не найдено</p>
+    {{/unless}}
+</div>

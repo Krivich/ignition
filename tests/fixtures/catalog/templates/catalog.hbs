@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест: Живой каталог</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js"></script>
+    <script src="/assets/ignition-runtime.js"></script>
+    <script src="/assets/templates.js"></script>
+    <script>
+        window.__IGNITION_INITIAL_DATA__ = {{{initialData}}};
+    </script>
+
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .controls { display: flex; gap: 1rem; margin-bottom: 1rem; }
+        .product-card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 0.5rem; }
+        .product-card .price { font-weight: bold; color: #0066cc; }
+        .product-card .category { color: #888; font-size: 0.85em; }
+        .cart-header { padding: 1rem; background: #f5f5f5; border-radius: 8px; margin-bottom: 1rem; }
+        .cart-empty { color: #888; }
+        .cart-count { font-weight: bold; }
+        .cart-details ul { list-style: none; padding: 0; }
+        .cart-details li { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #eee; }
+        .empty { color: #888; padding: 2rem; text-align: center; }
+        button { cursor: pointer; padding: 0.5rem 1rem; border: 1px solid #0066cc; background: white; color: #0066cc; border-radius: 4px; }
+        button:hover { background: #f0f8ff; }
+    </style>
+</head>
+<body>
+
+    <h1>Каталог (тест реактивности)</h1>
+
+    {{!-- ГРАБЛЬ #1: двусторонняя привязка + фильтрация --}}
+    <div class="controls">
+        <input type="search"
+               placeholder="Поиск товаров..."
+               data-ignition-binding="ui.searchQuery">
+
+        <select data-ignition-binding="ui.activeCategory">
+            <option value="all">Все категории</option>
+            <option value="electronics">Электроника</option>
+            <option value="books">Книги</option>
+        </select>
+    </div>
+
+    {{!-- ГРАБЛЬ #2: computed依赖 от трёх источников --}}
+    <div data-ignition-block="catalog/product-list"
+         data-ignition-depends="filteredProducts">
+    </div>
+
+    {{!-- ГРАБЛЬ #3: два блока на одну модель --}}
+    <div data-ignition-block="catalog/cart-header"
+         data-ignition-depends="cart">
+    </div>
+
+    {{!-- ГРАБЛЬ #4: #each с push/pop --}}
+    <div data-ignition-block="catalog/cart-details"
+         data-ignition-depends="cart">
+    </div>
+
+</body>
+</html>

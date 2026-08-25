@@ -1,0 +1,19 @@
+{
+  "products": {
+    "items": [
+      { "id": 1, "name": "Ноутбук ThinkPad", "price": 59990, "category": "electronics" },
+      { "id": 2, "name": "Книга по JavaScript", "price": 450, "category": "books" },
+      { "id": 3, "name": "Мышь Logitech", "price": 1200, "category": "electronics" },
+      { "id": 4, "name": "Роман «Преступление и наказание»", "price": 380, "category": "books" }
+    ],
+    "loading": false,
+    "error": null
+  },
+  "ui": {
+    "searchQuery": "",
+    "activeCategory": "all"
+  },
+  "cart": {
+    "items": []
+  }
+}

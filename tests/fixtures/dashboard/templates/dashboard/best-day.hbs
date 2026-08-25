@@ -1,0 +1,8 @@
+{{#if metrics.loading}}
+    <div class="skeleton"></div>
+{{else}}
+    <div class="best-day">
+        <h3>Лучший день</h3>
+        <div class="metric">{{bestDay.date}}: {{bestDay.amount}} ₽</div>
+    </div>
+{{/if}}

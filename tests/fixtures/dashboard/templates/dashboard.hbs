@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест: Дашборд</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js"></script>
+    <script src="/assets/ignition-runtime.js"></script>
+    <script src="/assets/templates.js"></script>
+    <script>
+        window.__IGNITION_INITIAL_DATA__ = {{{initialData}}};
+    </script>
+
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .controls { margin-bottom: 1rem; }
+        .widget { border: 1px solid #ddd; border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem; }
+        .widget h2 { margin-top: 0; color: #333; }
+        .skeleton { height: 2rem; background: #f0f0f0; border-radius: 4px; animation: pulse 1s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .metric { font-size: 1.5rem; font-weight: bold; color: #0066cc; }
+        .sale-item { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #eee; }
+        .best-day { background: #f0fff0; border-color: #00aa00; }
+        button { padding: 0.5rem 1rem; border: 1px solid #0066cc; background: white; color: #0066cc; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #f0f8ff; }
+    </style>
+</head>
+<body>
+
+    <h1>Дашборд (тест реактивности)</h1>
+
+    <div class="controls">
+        <button data-ignition-on="click → metricsRefresh">Обновить данные</button>
+        <select data-ignition-binding="ui.period">
+            <option value="week">Неделя</option>
+            <option value="month">Месяц</option>
+        </select>
+    </div>
+
+    {{!-- Виджет 1: общая сводка — зависит от computed --}}
+    <div data-ignition-block="dashboard/summary"
+         data-ignition-depends="totalSales, avgSales">
+    </div>
+
+    {{!-- Виджет 2: список продаж — зависит от filteredSales --}}
+    <div data-ignition-block="dashboard/sales-list"
+         data-ignition-depends="filteredSales">
+    </div>
+
+    {{!-- Виджет 3: топ-день — зависит от bestDay --}}
+    <div data-ignition-block="dashboard/best-day"
+         data-ignition-depends="bestDay">
+    </div>
+
+    {{!-- Виджет 4: мини-сводка внизу — зависит от всех computed --}}
+    <div data-ignition-block="dashboard/footer"
+         data-ignition-depends="totalSales, bestDay">
+    </div>
+
+</body>
+</html>
