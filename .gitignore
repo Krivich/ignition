@@ -6,5 +6,7 @@ logs/
 *.iml
 package-lock.json
 QWEN.md
+qwen_context.txt
+tmp.json
 output/*
 !output/templates/
