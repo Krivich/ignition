@@ -20,39 +20,6 @@ function getByPath(obj, path) {
   return path.split('.').reduce((cur, key) => cur?.[key], obj);
 }
 
-export function processOptions(state, element) {
-  const path = element.getAttribute('data-ignition-options');
-  if (!path) return;
-
-  function populate() {
-    const items = getByPath(state, path);
-    if (!Array.isArray(items)) return;
-
-    const tag = element.tagName.toLowerCase();
-    if (tag === 'select') {
-      const placeholder = element.querySelector('option[disabled]');
-      element.innerHTML = '';
-      if (placeholder) element.appendChild(placeholder);
-      items.forEach(item => {
-        const opt = document.createElement('option');
-        opt.value = String(item);
-        opt.textContent = String(item);
-        element.appendChild(opt);
-      });
-    } else if (tag === 'datalist') {
-      element.innerHTML = '';
-      items.forEach(item => {
-        const opt = document.createElement('option');
-        opt.value = String(item);
-        element.appendChild(opt);
-      });
-    }
-  }
-
-  populate();
-  state.subscribe(path, populate);
-}
-
 function parseArgs(argsStr) {
   if (!argsStr || !argsStr.trim()) return [];
   return argsStr.split(',').map(arg => {

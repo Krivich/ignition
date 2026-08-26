@@ -1,15 +1,22 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createReactiveState } from '../../engine/core/runtime/state.js';
 import {
   initBinding,
   initBlocks,
   registerAction,
-  processEventHandlers
+  processEventHandlers,
+  resetActions
 } from '../../engine/core/runtime/binding.js';
-import { registerTemplate } from '../../engine/core/runtime/render.js';
+import { registerTemplate, resetRegistry } from '../../engine/core/runtime/render.js';
 
 describe('ignition — привязки и обработчики', () => {
+
+  afterEach(() => {
+    resetActions();
+    resetRegistry();
+  });
 
   describe('двусторонняя привязка', () => {
     let state;
@@ -65,6 +72,51 @@ describe('ignition — привязки и обработчики', () => {
       textarea.dispatchEvent(new Event('input', { bubbles: true }));
       expect(state.form.fields.message).toBe('Привет мир');
     });
+
+    it('checkbox → state: checked мутирует boolean', () => {
+      state.form = { consent: false };
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.setAttribute('data-ignition-binding', 'form.consent');
+      document.body.appendChild(checkbox);
+      initBinding(state, checkbox);
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+      expect(state.form.consent).toBe(true);
+    });
+
+    it('checkbox → state: unchecked ставит false', () => {
+      state.form = { consent: true };
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.setAttribute('data-ignition-binding', 'form.consent');
+      document.body.appendChild(checkbox);
+      initBinding(state, checkbox);
+      checkbox.checked = false;
+      checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+      expect(state.form.consent).toBe(false);
+    });
+
+    it('state → checkbox: изменение state обновляет checked', () => {
+      state.form = { consent: false };
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.setAttribute('data-ignition-binding', 'form.consent');
+      document.body.appendChild(checkbox);
+      initBinding(state, checkbox);
+      state.form.consent = true;
+      expect(checkbox.checked).toBe(true);
+    });
+
+    it('checkbox начальное значение из state', () => {
+      state.form = { consent: true };
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.setAttribute('data-ignition-binding', 'form.consent');
+      document.body.appendChild(checkbox);
+      initBinding(state, checkbox);
+      expect(checkbox.checked).toBe(true);
+    });
   });
 
   describe('data-ignition-on — обработчики событий', () => {
@@ -85,7 +137,7 @@ describe('ignition — привязки и обработчики', () => {
       processEventHandlers(state, btn);
       btn.click();
       expect(handler).toHaveBeenCalledTimes(1);
-      expect(handler).toHaveBeenCalledWith(state);
+      expect(handler).toHaveBeenCalledWith(state, expect.any(Event));
     });
 
     it('click → actionName(args): аргументы передаются в action', () => {
@@ -96,7 +148,7 @@ describe('ignition — привязки и обработчики', () => {
       document.body.appendChild(btn);
       processEventHandlers(state, btn);
       btn.click();
-      expect(handler).toHaveBeenCalledWith(state, 42, 990);
+      expect(handler).toHaveBeenCalledWith(state, 42, 990, expect.any(Event));
     });
 
     it('submit → actionName: предотвращает дефолтное поведение формы', () => {
@@ -109,6 +161,22 @@ describe('ignition — привязки и обработчики', () => {
       const event = new Event('submit', { bubbles: true, cancelable: true });
       form.dispatchEvent(event);
       expect(event.defaultPrevented).toBe(true);
+      expect(handler).toHaveBeenCalledWith(state, event);
+    });
+
+    it('action получает event объект с нужными свойствами', () => {
+      const handler = vi.fn();
+      registerAction('keyHandler', handler);
+      const input = document.createElement('input');
+      input.setAttribute('data-ignition-on', 'keydown → keyHandler()');
+      document.body.appendChild(input);
+      processEventHandlers(state, input);
+      const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true });
+      input.dispatchEvent(event);
+      const receivedEvent = handler.mock.calls[0][1];
+      expect(receivedEvent.key).toBe('Enter');
+      expect(receivedEvent.type).toBe('keydown');
+      expect(receivedEvent.target).toBe(input);
     });
 
     it('action может мутировать state', () => {
@@ -123,6 +191,40 @@ describe('ignition — привязки и обработчики', () => {
       btn.click();
       expect(state.cart.items).toHaveLength(1);
       expect(state.cart.total).toBe(1);
+    });
+
+    it('keydown → actionName(): вызывает действие по нажатию клавиши', () => {
+      const handler = vi.fn();
+      registerAction('submitSkill', handler);
+      const input = document.createElement('input');
+      input.setAttribute('data-ignition-on', 'keydown → submitSkill()');
+      document.body.appendChild(input);
+      processEventHandlers(state, input);
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledWith(state, expect.any(KeyboardEvent));
+    });
+
+    it('keydown → actionName(args): аргументы передаются', () => {
+      const handler = vi.fn();
+      registerAction('filterBy', handler);
+      const input = document.createElement('input');
+      input.setAttribute('data-ignition-on', 'keydown → filterBy(42)');
+      document.body.appendChild(input);
+      processEventHandlers(state, input);
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+      expect(handler).toHaveBeenCalledWith(state, 42, expect.any(KeyboardEvent));
+    });
+
+    it('keyup → actionName():keyup тоже работает', () => {
+      const handler = vi.fn();
+      registerAction('onKeyUp', handler);
+      const input = document.createElement('input');
+      input.setAttribute('data-ignition-on', 'keyup → onKeyUp()');
+      document.body.appendChild(input);
+      processEventHandlers(state, input);
+      input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', bubbles: true }));
+      expect(handler).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -142,7 +244,7 @@ describe('ignition — привязки и обработчики', () => {
 
     it('рендерит блок при инициализации', () => {
       registerTemplate('catalog/list', (data) => {
-        return data.items.map(i => `<p>${i.name}</p>`).join('');
+        return data.products.items.map(i => `<p>${i.name}</p>`).join('');
       });
       document.body.innerHTML = `
         <div data-ignition-block="catalog/list"
@@ -157,7 +259,7 @@ describe('ignition — привязки и обработчики', () => {
 
     it('перерендеряет блок при изменении depends', () => {
       registerTemplate('catalog/list', (data) => {
-        return data.items.map(i => `<p>${i.name}</p>`).join('');
+        return data.products.items.map(i => `<p>${i.name}</p>`).join('');
       });
       document.body.innerHTML = `
         <div data-ignition-block="catalog/list"
@@ -198,9 +300,9 @@ describe('ignition — привязки и обработчики', () => {
       blocks.forEach(b => expect(b.innerHTML).toContain('1'));
     });
 
-    it(' several блоков с разными depends обновляются независимо', () => {
+    it('несколько блоков с разными depends обновляются независимо', () => {
       registerTemplate('a/block', () => '<p>block A</p>');
-      registerTemplate('b/block', () => '<p>block B</p>');
+      registerTemplate('b/block', (data) => `<p>cart:${data.cart.items.length}</p>`);
       document.body.innerHTML = `
         <div data-ignition-block="a/block" data-ignition-depends="products"></div>
         <div data-ignition-block="b/block" data-ignition-depends="cart"></div>
@@ -211,8 +313,38 @@ describe('ignition — привязки и обработчики', () => {
       const blockB = document.querySelector('[data-ignition-block="b/block"]');
       const htmlA = blockA.innerHTML;
       state.cart.items = [{ id: 1 }];
-      expect(blockA.innerHTML).toBe(htmlA); // A не изменился
-      expect(blockB.innerHTML).not.toBe('<p>block B</p>'); // B обновился
+      expect(blockA.innerHTML).toBe(htmlA);
+      expect(blockB.innerHTML).toBe('<p>cart:1</p>');
+    });
+
+    it('afterHydrate вызывается после re-render блока', () => {
+      const afterHydrate = vi.fn();
+      registerTemplate('life/block', () => '<p>rendered</p>');
+      document.body.innerHTML = `
+        <div data-ignition-block="life/block"
+             data-ignition-depends="items">
+        </div>
+      `;
+      initBlocks(state, { afterHydrate });
+      expect(afterHydrate).toHaveBeenCalledTimes(1);
+      expect(afterHydrate).toHaveBeenCalledWith(
+        expect.any(HTMLElement),
+        expect.stringContaining('rendered')
+      );
+    });
+
+    it('afterHydrate вызывается при re-render блока', () => {
+      const afterHydrate = vi.fn();
+      registerTemplate('life/block2', (data) => `<p>count:${data.items.length}</p>`);
+      document.body.innerHTML = `
+        <div data-ignition-block="life/block2"
+             data-ignition-depends="items">
+        </div>
+      `;
+      initBlocks(state, { afterHydrate });
+      const callCount = afterHydrate.mock.calls.length;
+      state.items = [1, 2, 3];
+      expect(afterHydrate).toHaveBeenCalledTimes(callCount + 1);
     });
   });
 });

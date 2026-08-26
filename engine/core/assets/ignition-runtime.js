@@ -290,43 +290,6 @@
     elements.forEach(function(el) { processEventHandlers(state, el); });
   }
 
-  function processOptions(state, element) {
-    var path = element.getAttribute('data-ignition-options');
-    if (!path) return;
-
-    function populate() {
-      var items = getByPath(state, path);
-      if (!Array.isArray(items)) return;
-      var tag = element.tagName.toLowerCase();
-      if (tag === 'select') {
-        var placeholder = element.querySelector('option[disabled]');
-        element.innerHTML = '';
-        if (placeholder) element.appendChild(placeholder);
-        items.forEach(function(item) {
-          var opt = document.createElement('option');
-          opt.value = String(item);
-          opt.textContent = String(item);
-          element.appendChild(opt);
-        });
-      } else if (tag === 'datalist') {
-        element.innerHTML = '';
-        items.forEach(function(item) {
-          var opt = document.createElement('option');
-          opt.value = String(item);
-          element.appendChild(opt);
-        });
-      }
-    }
-
-    populate();
-    state.subscribe(path, populate);
-  }
-
-  function processAllOptions(state, root) {
-    var elements = (root || document).querySelectorAll('[data-ignition-options]');
-    elements.forEach(function(el) { processOptions(state, el); });
-  }
-
   function processAllBindings(state, root) {
     var elements = (root || document).querySelectorAll('[data-ignition-binding]');
     elements.forEach(function(el) { initBinding(state, el); });
@@ -353,7 +316,6 @@
           hydrate(block, html);
           processAllBindings(state, block);
           processAllEventHandlers(state, block);
-          processAllOptions(state, block);
           if (afterHydrate) afterHydrate(block, html);
         } catch (err) {
           console.error('[ignition] Block render error: ' + templateName, err);
@@ -370,6 +332,52 @@
 
   // ========== Boot ==========
   function boot() {
+    // Register core Handlebars helpers (same as server-side in handlebars.js)
+    if (typeof Handlebars !== 'undefined') {
+      Handlebars.registerHelper('times', function(n, block) {
+        var accum = '';
+        for (var i = 1; i <= n; ++i) { accum += block.fn(i); }
+        return accum;
+      });
+
+      Handlebars.registerHelper('ifCond', function(v1, operator, v2, options) {
+        switch (operator) {
+          case '==':  return (v1 == v2) ? options.fn(this) : options.inverse(this);
+          case '===': return (v1 === v2) ? options.fn(this) : options.inverse(this);
+          case '!=':  return (v1 != v2) ? options.fn(this) : options.inverse(this);
+          case '!==': return (v1 !== v2) ? options.fn(this) : options.inverse(this);
+          case '<':   return (v1 < v2) ? options.fn(this) : options.inverse(this);
+          case '<=':  return (v1 <= v2) ? options.fn(this) : options.inverse(this);
+          case '>':   return (v1 > v2) ? options.fn(this) : options.inverse(this);
+          case '>=':  return (v1 >= v2) ? options.fn(this) : options.inverse(this);
+          case '&&':  return (v1 && v2) ? options.fn(this) : options.inverse(this);
+          case '||':  return (v1 || v2) ? options.fn(this) : options.inverse(this);
+          default:    return options.inverse(this);
+        }
+      });
+
+      Handlebars.registerHelper('get', function(obj, path) {
+        return path.split('.').reduce(function(cur, key) { return cur && cur[key]; }, obj);
+      });
+
+      Handlebars.registerHelper('concat', function() {
+        return Array.prototype.slice.call(arguments, 0, -1).join('');
+      });
+
+      Handlebars.registerHelper('declineWord', function(count, one, two, five) {
+        count = Math.abs(count) % 100;
+        var n1 = count % 10;
+        if (count > 10 && count < 20) return five;
+        if (n1 > 1 && n1 < 5) return two;
+        if (n1 === 1) return one;
+        return five;
+      });
+
+      Handlebars.registerHelper('json', function(context) {
+        return new Handlebars.SafeString(JSON.stringify(context));
+      });
+    }
+
     var rawTemplates = window.__IGNITION_TEMPLATES__ || {};
     Object.keys(rawTemplates).forEach(function(name) {
       var source = rawTemplates[name];
@@ -405,7 +413,6 @@
 
     processAllBindings(state);
     processAllEventHandlers(state);
-    processAllOptions(state);
 
     window.__IGNITION_STATE__ = state;
   }

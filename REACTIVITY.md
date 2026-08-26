@@ -706,21 +706,30 @@ block.addEventListener('focusin', function(e) {
 | `data-ignition-depends="a, b"` | Block | Comma-separated dependency paths |
 | `data-ignition-binding="path"` | Input/Select/Textarea | Two-way binding to state path |
 | `data-ignition-on="event → action(args)"` | Any | Event handler declaration |
-| `data-ignition-options="path"` | Select/Datalist | Populate options from state array |
 
-### `data-ignition-options`
+### Dynamic Select Options
 
-Declaratively populate a `<select>` or `<datalist>` from an array in state. Re-populates automatically when the array changes.
+For dynamic options, use `{{#each}}` inside a block. No special mechanism needed — blocks re-render when dependencies change, so options update automatically:
 
-```html
-<select data-ignition-options="reference.industries"
-        data-ignition-binding="form.industry">
-    <option value="" disabled selected>Choose...</option>
-</select>
-
-<input list="cities-list" data-ignition-binding="form.city">
-<datalist id="cities-list"
-          data-ignition-options="reference.cities"></datalist>
+```handlebars
+<div data-ignition-block="form/industries"
+     data-ignition-depends="reference">
+    <select data-ignition-binding="form.industry">
+        <option value="" disabled selected>Choose...</option>
+        {{#each reference.industries}}
+            <option value="{{this}}">{{this}}</option>
+        {{/each}}
+    </select>
+</div>
 ```
 
-The state value must be an array of strings (or numbers, converted to strings). Existing `<option>` elements with `disabled` are preserved as placeholders.
+When `reference.industries` changes in state, the block re-renders and the select gets fresh options. The `data-ignition-binding` on the select stays in sync with state.
+
+For static options (known at build time), put them directly in the template without a block:
+
+```html
+<select data-ignition-binding="form.country">
+    <option value="ru">Russia</option>
+    <option value="kz">Kazakhstan</option>
+</select>
+```
