@@ -3,7 +3,7 @@ import { Command } from 'commander';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs/promises'; // <-- CRITICAL IMPORT
-import {cleanupTmp, safeMkdir} from '../utils/fs.js';
+import {cleanupTmp, safeMkdir, atomicWrite} from '../utils/fs.js';
 import { RenderQueue } from '../core/queue.js';
 import { generateSitemap } from '../core/sitemap.js';
 import config from '../config/default.js';
@@ -95,6 +95,9 @@ async function runBuild() {
     // Copy universal assets BEFORE rendering
     await copyUniversalAssets();
 
+    // Generate templates.js for client-side rendering
+    await generateTemplatesJs();
+
     // Create queue and start processing
     const queue = new RenderQueue();
     await queue.processQueue();
@@ -151,12 +154,53 @@ async function runWatch() {
   }
 }
 
+async function generateTemplatesJs() {
+    const templatesDir = config.source.templates;
+    const entries = [];
+
+    try {
+        const dirs = await fs.readdir(templatesDir, { withFileTypes: true });
+        for (const dir of dirs) {
+            if (!dir.isDirectory()) continue;
+            const files = await fs.readdir(path.join(templatesDir, dir.name), { withFileTypes: true });
+            for (const file of files) {
+                if (!file.isFile() || !file.name.endsWith('.hbs')) continue;
+                const partialName = dir.name + '/' + path.basename(file.name, '.hbs');
+                const source = await fs.readFile(path.join(templatesDir, dir.name, file.name), 'utf8');
+                entries.push({ name: partialName, source });
+            }
+        }
+    } catch (err) {
+        if (err.code !== 'ENOENT') {
+            logger.error('Failed to scan templates for templates.js', { error: err.message });
+        }
+    }
+
+    if (entries.length === 0) return;
+
+    const lines = ['window.__IGNITION_TEMPLATES__ = {'];
+    entries.forEach((entry, i) => {
+        const escaped = entry.source.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\n/g, '\\n');
+        const comma = i < entries.length - 1 ? ',' : '';
+        lines.push(`  ${JSON.stringify(entry.name)}: \`${escaped}\`${comma}`);
+    });
+    lines.push('};');
+
+    const dest = path.join(config.output.assets, 'templates.js');
+    await safeMkdir(path.dirname(dest));
+    await atomicWrite(dest, lines.join('\n'));
+    logger.info(`✅ Generated templates.js with ${entries.length} templates`);
+}
+
 async function copyUniversalAssets() {
     const assets = [
         {
             src: path.join(__dirname, '..', 'core', 'assets', 'ignition-pagination.js'),
-            // Now copying to public/assets/
             dest: path.join(config.output.assets, 'ignition-pagination.js')
+        },
+        {
+            src: path.join(__dirname, '..', 'core', 'assets', 'ignition-runtime.js'),
+            dest: path.join(config.output.assets, 'ignition-runtime.js')
         }
     ];
 
