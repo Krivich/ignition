@@ -239,28 +239,41 @@
   }
 
   function initBinding(state, element) {
-    if (element.dataset.ignitionBound) return;
     var path = element.getAttribute('data-ignition-binding');
     if (!path) return;
 
-    element.dataset.ignitionBound = '1';
     var tag = element.tagName.toLowerCase();
-    var eventType = tag === 'select' ? 'change' : 'input';
+    var isCheckbox = element.type === 'checkbox';
+    var eventType = (tag === 'select' || isCheckbox) ? 'change' : 'input';
 
     element.addEventListener(eventType, function() {
-      setByPath(state, path, element.value);
+      setByPath(state, path, isCheckbox ? element.checked : element.value);
     });
 
     state.subscribe(path, function() {
       var val = getByPath(state, path);
-      if (element.value !== val) {
-        element.value = val != null ? val : '';
+      if (isCheckbox) {
+        if (element.checked !== !!val) {
+          element.checked = !!val;
+        }
+      } else {
+        if (element.value !== val) {
+          element.value = val != null ? val : '';
+        }
       }
     });
 
     var initial = getByPath(state, path);
-    if (initial !== undefined && element.value !== initial) {
-      element.value = initial;
+    if (initial !== undefined) {
+      if (isCheckbox) {
+        if (element.checked !== !!initial) {
+          element.checked = !!initial;
+        }
+      } else {
+        if (element.value !== initial) {
+          element.value = initial;
+        }
+      }
     }
   }
 
@@ -309,6 +322,8 @@
       var allDeps = depends.concat(extraDeps);
       var customRenderer = renderers[templateName] || null;
 
+      var isServerFilled = block.innerHTML.trim() !== '';
+
       function render() {
         try {
           var data = customRenderer ? customRenderer(state) : state;
@@ -322,7 +337,13 @@
         }
       }
 
-      render();
+      if (isServerFilled) {
+        processAllBindings(state, block);
+        processAllEventHandlers(state, block);
+        if (afterHydrate) afterHydrate(block, block.innerHTML);
+      } else {
+        render();
+      }
 
       allDeps.forEach(function(dep) {
         state.subscribe(dep, function() { render(); });

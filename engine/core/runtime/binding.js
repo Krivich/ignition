@@ -104,18 +104,35 @@ export function initBlocks(state, options = {}) {
     const customRenderer = renderers[templateName];
     const extraDeps = sourceDeps[templateName] || [];
 
+    const isServerFilled = block.innerHTML.trim() !== '';
+
+    function processBlockContent(root) {
+      root.querySelectorAll('[data-ignition-binding]').forEach(el => {
+        initBinding(state, el);
+      });
+      root.querySelectorAll('[data-ignition-on]').forEach(el => {
+        processEventHandlers(state, el);
+      });
+    }
+
     function render() {
       try {
         const data = customRenderer ? customRenderer(state) : state;
         const html = renderTemplate(templateName, data);
         hydrate(block, html);
+        processBlockContent(block);
         if (afterHydrate) afterHydrate(block, html);
       } catch (err) {
         console.error(`[ignition] Block render error: ${templateName}`, err);
       }
     }
 
-    render();
+    if (isServerFilled) {
+      processBlockContent(block);
+      if (afterHydrate) afterHydrate(block, block.innerHTML);
+    } else {
+      render();
+    }
 
     for (const dep of [...depends, ...extraDeps]) {
       state.subscribe(dep, () => render());

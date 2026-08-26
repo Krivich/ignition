@@ -9,7 +9,9 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { readBuiltHTML } from './helpers.js';
-import { createServerPage, loadTemplates, setInitialData, runRuntime } from './helpers.js';
+import { createReactiveState } from '../../engine/core/runtime/state.js';
+import { registerTemplate, resetRegistry } from '../../engine/core/runtime/render.js';
+import { initBlocks, resetActions } from '../../engine/core/runtime/binding.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -77,19 +79,21 @@ describe('H. Reliability and compatibility', () => {
     });
 
     it('runtime init does not crash on missing data', () => {
-      loadTemplates({ 'test/block': '<p>{{data}}</p>' });
-      setInitialData({}); // Empty data
-
-      createServerPage({
-        blockName: 'test/block',
-        blockContent: '<p>Fallback</p>',
-        depends: 'nonexistent',
+      const state = createReactiveState({});
+      registerTemplate('test/block', (data) => {
+        return `<p>${data.nonexistent.deep.value}</p>`;
       });
 
-      // Should not throw
-      expect(() => runRuntime()).not.toThrow();
+      document.body.innerHTML = `
+        <div data-ignition-block="test/block" data-ignition-depends="nonexistent">
+          <p>Fallback content</p>
+        </div>
+      `;
 
-      // Original content preserved
+      // Block has server content — should NOT crash, should preserve it
+      expect(() => initBlocks(state)).not.toThrow();
+
+      // Server content preserved because block is server-filled
       expect(document.querySelector('[data-ignition-block]').innerHTML).toContain('Fallback');
     });
   });

@@ -49,7 +49,8 @@ export async function renderTemplate(templatePath, data, outputDir, dataset, lay
             );
         } else {
             // Regular rendering
-            const html = template({ ...data, layout, dataset, initialData: JSON.stringify(data) });
+            const { layout: _l, dataset: _d, ...pureData } = data;
+            const html = template({ ...data, initialData: JSON.stringify(pureData) });
             const outputPath = path.join(outputDir, `${dataset}.html`);
             await safeMkdir(path.dirname(outputPath));
             await atomicWrite(outputPath, html);

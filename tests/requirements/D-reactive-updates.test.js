@@ -46,12 +46,8 @@ describe('D. Reactive updates', () => {
       });
 
       document.body.innerHTML = `
-        <div data-ignition-block="block/a" data-ignition-depends="a.b">
-          <p>initial</p>
-        </div>
-        <div data-ignition-block="block/d" data-ignition-depends="d">
-          <p>other</p>
-        </div>
+        <div data-ignition-block="block/a" data-ignition-depends="a.b"></div>
+        <div data-ignition-block="block/d" data-ignition-depends="d"></div>
       `;
 
       initBlocks(state);
@@ -74,9 +70,7 @@ describe('D. Reactive updates', () => {
       });
 
       document.body.innerHTML = `
-        <div data-ignition-block="block/a-parent" data-ignition-depends="a">
-          <p>initial</p>
-        </div>
+        <div data-ignition-block="block/a-parent" data-ignition-depends="a"></div>
       `;
 
       initBlocks(state);
@@ -99,9 +93,7 @@ describe('D. Reactive updates', () => {
       });
 
       document.body.innerHTML = `
-        <div data-ignition-block="block/d" data-ignition-depends="d">
-          <p>initial</p>
-        </div>
+        <div data-ignition-block="block/d" data-ignition-depends="d"></div>
       `;
 
       initBlocks(state);
@@ -122,9 +114,7 @@ describe('D. Reactive updates', () => {
       });
 
       document.body.innerHTML = `
-        <div data-ignition-block="block/d" data-ignition-depends="d">
-          <p>initial</p>
-        </div>
+        <div data-ignition-block="block/d" data-ignition-depends="d"></div>
       `;
 
       initBlocks(state);
@@ -147,9 +137,7 @@ describe('D. Reactive updates', () => {
       });
 
       document.body.innerHTML = `
-        <div data-ignition-block="block/a" data-ignition-depends="a.b">
-          <p>initial</p>
-        </div>
+        <div data-ignition-block="block/a" data-ignition-depends="a.b"></div>
       `;
 
       state.subscribe('a.b', (path, oldVal, newVal) => {
@@ -176,7 +164,7 @@ describe('D. Reactive updates', () => {
   });
 
   describe('D4: Render error preserves block content', () => {
-    it('initial render error leaves block empty (not crashing)', () => {
+    it('render error does not crash and block keeps last content', () => {
       registerTemplate('block/error', (data) => {
         if (data.shouldError) {
           throw new Error('Render failed');
@@ -187,20 +175,18 @@ describe('D. Reactive updates', () => {
       state.shouldError = false;
 
       document.body.innerHTML = `
-        <div data-ignition-block="block/error" data-ignition-depends="shouldError">
-          <p>Original content preserved</p>
-        </div>
+        <div data-ignition-block="block/error" data-ignition-depends="shouldError"></div>
       `;
 
-      // Initial render succeeds (shouldError=false), replaces content
+      // Initial render succeeds
       initBlocks(state);
       const block = document.querySelector('[data-ignition-block]');
       expect(block.innerHTML.trim()).toBe('<p></p>');
 
-      // Now trigger error on re-render
+      // Trigger error on re-render
       state.shouldError = true;
 
-      // Content should be preserved from last successful render, not cleared
+      // Content from last successful render is preserved
       expect(block.innerHTML).not.toBe('');
     });
 
@@ -212,9 +198,7 @@ describe('D. Reactive updates', () => {
       state.nested = null;
 
       document.body.innerHTML = `
-        <div data-ignition-block="block/unsafe" data-ignition-depends="nested">
-          <p>Fallback content</p>
-        </div>
+        <div data-ignition-block="block/unsafe" data-ignition-depends="nested"></div>
       `;
 
       expect(() => initBlocks(state)).not.toThrow();

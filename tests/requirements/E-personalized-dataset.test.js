@@ -129,12 +129,8 @@ describe('E. Personalized dataset and partial pre-rendering', () => {
       });
 
       document.body.innerHTML = `
-        <div data-ignition-block="block/ref" data-ignition-depends="reference">
-          <ul><li>IT</li></ul>
-        </div>
-        <div data-ignition-block="block/form" data-ignition-depends="form.name">
-          <p>Alice</p>
-        </div>
+        <div data-ignition-block="block/ref" data-ignition-depends="reference"></div>
+        <div data-ignition-block="block/form" data-ignition-depends="form.name"></div>
       `;
 
       initBlocks(state);
@@ -160,9 +156,7 @@ describe('E. Personalized dataset and partial pre-rendering', () => {
       });
 
       document.body.innerHTML = `
-        <div data-ignition-block="block/ref" data-ignition-depends="reference">
-          <p>IT, Finance</p>
-        </div>
+        <div data-ignition-block="block/ref" data-ignition-depends="reference"></div>
       `;
 
       initBlocks(state);
@@ -187,9 +181,7 @@ describe('E. Personalized dataset and partial pre-rendering', () => {
       state.items = [1, 2, 3];
 
       document.body.innerHTML = `
-        <div data-ignition-block="block/arr" data-ignition-depends="items">
-          <p>1,2,3</p>
-        </div>
+        <div data-ignition-block="block/arr" data-ignition-depends="items"></div>
       `;
 
       initBlocks(state);
