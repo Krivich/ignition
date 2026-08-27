@@ -1,4 +1,5 @@
 import deepGet from '../utils/deepGet.js';
+import { parseBlockData, buildBlockContext } from '../utils/parseBlockData.js';
 
 let manifest = {};
 
@@ -96,7 +97,10 @@ export function registerBlockHelper(Handlebars, env) {
     const layout = this && this.layout ? this.layout : '';
     const blockName = layout ? `${layout}/${name}` : name;
 
-    const slice = dataPath ? deepGet(this, dataPath) : this;
+    const parsed = parseBlockData(dataPath);
+    const slice = dataPath
+      ? buildBlockContext(this, parsed, (data, path) => deepGet(data, path))
+      : this;
     env.getManifest()[blockName] = slice;
 
     const partial = Handlebars.partials[blockName];

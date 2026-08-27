@@ -200,4 +200,46 @@ describe('A+B: Server-side block rendering + compact manifest (real engine)', ()
     expect(html).toContain('<div class="product">Товар А</div>');
     expect(html).toContain('data-ignition-block');
   });
+
+  it('A5: block can receive multiple named data slices', async () => {
+    const templatesDir = config.source.templates;
+    const layoutDir = path.join(templatesDir, 'ssr');
+    await fs.mkdir(layoutDir, { recursive: true });
+
+    const layout = `<!DOCTYPE html>
+<html><head><script>window.__IGNITION_MANIFEST__ = {{{manifest}}};</script></head><body>
+  {{#block name="multi-list" data="products, categories" depends="products, categories"}}
+     <p class="empty">Нет данных</p>
+  {{/block}}
+</body></html>`;
+    const block = `
+{{#each products}}<span class="product">{{name}}</span>{{/each}}
+{{#each categories}}<span class="category">{{this}}</span>{{/each}}
+`;
+
+    await fs.writeFile(path.join(templatesDir, 'ssr.hbs'), layout);
+    await fs.writeFile(path.join(layoutDir, 'multi-list.hbs'), block);
+
+    const data = {
+      products: [{ name: 'A' }, { name: 'B' }],
+      categories: ['cat1', 'cat2'],
+      layout: 'ssr',
+      dataset: 'main',
+    };
+    const outputDir = path.join(config.output.html, 'ssr');
+
+    await renderTemplate(path.join(templatesDir, 'ssr.hbs'), data, outputDir, 'main', 'ssr');
+    const html = await fs.readFile(path.join(outputDir, 'main.html'), 'utf8');
+
+    expect(html).toContain('data-ignition-data="products, categories"');
+    expect(html).toContain('<span class="product">A</span>');
+    expect(html).toContain('<span class="category">cat2</span>');
+
+    const match = html.match(/__IGNITION_MANIFEST__\s*=\s*(\{[\s\S]*?\});/);
+    const manifest = JSON.parse(match[1]);
+    expect(manifest['ssr/multi-list']).toEqual({
+      products: data.products,
+      categories: data.categories
+    });
+  });
 });

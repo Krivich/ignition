@@ -11,6 +11,44 @@
     }, obj);
   }
 
+  // ========== parseBlockData (inlined from utils) ==========
+  function parseBlockData(dataStr) {
+  if (!dataStr || !dataStr.trim()) {
+    return { mode: 'single', paths: [] };
+  }
+
+  const parts = dataStr
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const paths = parts.map((part) => {
+    const explicit = part.match(/^(.+?)\s+as\s+(\w+)$/i);
+    if (explicit) {
+      return { path: explicit[1].trim(), alias: explicit[2].trim() };
+    }
+    const segments = part.split('.');
+    return { path: part, alias: segments[segments.length - 1] };
+  });
+
+  return {
+    mode: paths.length === 1 ? 'single' : 'multi',
+    paths
+  };
+}
+
+function buildBlockContext(data, parsed, getter) {
+  if (parsed.mode === 'single') {
+    return parsed.paths[0] ? getter(data, parsed.paths[0].path) : data;
+  }
+
+  const ctx = {};
+  for (const { path, alias } of parsed.paths) {
+    ctx[alias] = getter(data, path);
+  }
+  return ctx;
+}
+
   // ========== helpers.js (canonical, single source) ==========
   let manifest = {};
 
@@ -108,7 +146,10 @@ function registerBlockHelper(Handlebars, env) {
     const layout = this && this.layout ? this.layout : '';
     const blockName = layout ? `${layout}/${name}` : name;
 
-    const slice = dataPath ? deepGet(this, dataPath) : this;
+    const parsed = parseBlockData(dataPath);
+    const slice = dataPath
+      ? buildBlockContext(this, parsed, (data, path) => deepGet(data, path))
+      : this;
     env.getManifest()[blockName] = slice;
 
     const partial = Handlebars.partials[blockName];
@@ -144,6 +185,7 @@ function registerBlockHelper(Handlebars, env) {
   const proxyToRaw = new WeakMap();
   let notifyDepth = 0;
   let pendingNotifications = [];
+  let activeTracker = null;
 
   function doNotify(fullPath, oldVal, newVal) {
     for (const [pattern, callbacks] of listeners) {
@@ -183,6 +225,10 @@ function registerBlockHelper(Handlebars, env) {
 
     const proxy = new Proxy(obj, {
       get(target, key) {
+        if (activeTracker) {
+          const path = prefix ? `${prefix}.${String(key)}` : String(key);
+          activeTracker.add(path);
+        }
         const value = target[key];
         if (value !== null && typeof value === 'object') {
           return wrap(value, prefix ? `${prefix}.${String(key)}` : String(key));
@@ -230,6 +276,15 @@ function registerBlockHelper(Handlebars, env) {
         if (cbs.size === 0) listeners.delete(path);
       }
     };
+  };
+
+  state.track = function (fn) {
+    const prev = activeTracker;
+    activeTracker = new Set();
+    fn();
+    const deps = new Set(activeTracker);
+    activeTracker = prev;
+    return deps;
   };
 
   return state;
@@ -499,7 +554,8 @@ function initBlocks(state, options = {}) {
         if (customRenderer) {
           data = customRenderer(state);
         } else if (dataPath) {
-          data = getByPath(state, dataPath);
+          const parsed = parseBlockData(dataPath);
+          data = buildBlockContext(state, parsed, (obj, path) => getByPath(obj, path));
         } else {
           data = state;
         }
@@ -527,6 +583,7 @@ function initBlocks(state, options = {}) {
 
   // ========== computed.js ==========
   const registry = new WeakMap();
+const effectStack = [];
 
 function getRegistry(state) {
   if (!registry.has(state)) {
@@ -537,11 +594,16 @@ function getRegistry(state) {
 
 function flushDirty(state) {
   const computeds = getRegistry(state);
-  for (const c of computeds) {
-    if (c.dirty) {
-      c.recompute();
+  let hadDirty;
+  do {
+    hadDirty = false;
+    for (const c of computeds) {
+      if (c.dirty) {
+        c.recompute();
+        hadDirty = true;
+      }
     }
-  }
+  } while (hadDirty);
 }
 
 function createComputed(state, name, fn) {
@@ -550,9 +612,40 @@ function createComputed(state, name, fn) {
     fn,
     dirty: true,
     cached: undefined,
+    stateUnsubs: [],
+    children: new Set(),
+    parents: new Set(),
     recompute() {
-      entry.cached = fn(state);
+      for (const unsub of entry.stateUnsubs) {
+        unsub();
+      }
+      entry.stateUnsubs = [];
+
+      for (const child of entry.children) {
+        child.parents.delete(entry);
+      }
+      entry.children.clear();
+
+      effectStack.push(entry);
+      const deps = state.track(() => {
+        entry.cached = fn(state);
+      });
+      effectStack.pop();
+
+      for (const dep of deps) {
+        entry.stateUnsubs.push(state.subscribe(dep, () => {
+          entry.invalidate();
+        }));
+      }
+
       entry.dirty = false;
+    },
+    invalidate() {
+      if (entry.dirty) return;
+      entry.dirty = true;
+      for (const parent of entry.parents) {
+        parent.invalidate();
+      }
     }
   };
 
@@ -560,15 +653,16 @@ function createComputed(state, name, fn) {
   computeds.push(entry);
 
   const getter = () => {
+    const parent = effectStack[effectStack.length - 1];
+    if (parent) {
+      parent.children.add(entry);
+      entry.parents.add(parent);
+    }
     if (entry.dirty) {
       flushDirty(state);
     }
     return entry.cached;
   };
-
-  state.subscribe('*', () => {
-    entry.dirty = true;
-  });
 
   entry.recompute();
 
@@ -600,10 +694,25 @@ function equal(a, b) {
 function diffSlices(manifest, blockPaths, newDataset) {
   const changed = new Set();
   for (const name of Object.keys(manifest)) {
-    const path = blockPaths[name];
-    const oldSlice = manifest[name];
-    const newSlice = path ? getSlice(newDataset, path) : newDataset;
-    if (!equal(oldSlice, newSlice)) changed.add(name);
+    const dataStr = blockPaths[name];
+    const parsed = parseBlockData(dataStr);
+
+    if (parsed.mode === 'multi') {
+      const oldSlices = manifest[name] || {};
+      for (const { path, alias } of parsed.paths) {
+        const oldSlice = oldSlices[alias];
+        const newSlice = getSlice(newDataset, path);
+        if (!equal(oldSlice, newSlice)) {
+          changed.add(name);
+          break;
+        }
+      }
+    } else {
+      const path = parsed.paths[0]?.path;
+      const oldSlice = manifest[name];
+      const newSlice = path ? getSlice(newDataset, path) : newDataset;
+      if (!equal(oldSlice, newSlice)) changed.add(name);
+    }
   }
   return changed;
 }
@@ -614,10 +723,12 @@ function diffSlices(manifest, blockPaths, newDataset) {
  */
 function mergeSlices(state, changedBlockNames, blockPaths, newDataset) {
   for (const name of changedBlockNames) {
-    const path = blockPaths[name];
-    if (!path) continue;
-    const value = getSlice(newDataset, path);
-    setByPath(state, path, value);
+    const dataStr = blockPaths[name];
+    const parsed = parseBlockData(dataStr);
+    for (const { path } of parsed.paths) {
+      const value = getSlice(newDataset, path);
+      setByPath(state, path, value);
+    }
   }
 }
 

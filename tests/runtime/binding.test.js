@@ -358,6 +358,7 @@ describe('ignition — привязки и обработчики', () => {
           { name: 'Ноутбук' },
           { name: 'Мышь' }
         ],
+        categories: ['electronics', 'books'],
         footer: { copyright: '2026' }
       });
     });
@@ -407,6 +408,41 @@ describe('ignition — привязки и обработчики', () => {
       state.products = [{ name: 'Клавиатура' }];
       expect(block.innerHTML).toContain('Клавиатура');
       expect(block.innerHTML).not.toContain('Ноутбук');
+    });
+
+    it('рендерит блок с несколькими именованными срезами', () => {
+      registerTemplate('ssr/multi-list', (data) => {
+        const products = data.products.map(p => `<span class="product">${p.name}</span>`).join('');
+        const categories = data.categories.map(c => `<span class="category">${c}</span>`).join('');
+        return products + categories;
+      });
+      document.body.innerHTML = `
+        <div data-ignition-block="ssr/multi-list"
+             data-ignition-data="products, categories"
+             data-ignition-depends="products, categories"></div>
+      `;
+      initBlocks(state);
+      const block = document.querySelector('[data-ignition-block]');
+      expect(block.innerHTML).toContain('<span class="product">Ноутбук</span>');
+      expect(block.innerHTML).toContain('<span class="category">electronics</span>');
+    });
+
+    it('перерендеряет мульти-срезовый блок при изменении любого среза', () => {
+      registerTemplate('ssr/multi-list', (data) => {
+        const products = data.products.map(p => `<span class="product">${p.name}</span>`).join('');
+        const categories = data.categories.map(c => `<span class="category">${c}</span>`).join('');
+        return products + categories;
+      });
+      document.body.innerHTML = `
+        <div data-ignition-block="ssr/multi-list"
+             data-ignition-data="products, categories"
+             data-ignition-depends="products, categories"></div>
+      `;
+      initBlocks(state);
+      const block = document.querySelector('[data-ignition-block]');
+      state.categories = ['books'];
+      expect(block.innerHTML).toContain('<span class="category">books</span>');
+      expect(block.innerHTML).not.toContain('electronics');
     });
   });
 

@@ -421,9 +421,10 @@ getter(); // returns cached value, recomputes if dirty
 
 ### How It Works
 
-1. `createComputed()` registers a `*` subscriber — any state change marks it dirty
-2. On first access (or explicit `flushDirty()`), it runs `fn(state)` and caches the result
-3. Multiple dirty computeds are flushed together — if computed A reads computed B, B is recomputed first
+1. During each recomputation, Ignition tracks which state paths the function actually reads
+2. It subscribes only to those paths — unrelated state changes do **not** mark it dirty
+3. On first access (or explicit `flushDirty()`), it runs `fn(state)` and caches the result
+4. Multiple dirty computeds are flushed together — if computed A reads computed B, B is recomputed first
 
 ### When to Use
 
@@ -689,7 +690,32 @@ api.blockOptions.renderers['form/skills'] = function(s) {
 };
 ```
 
-3. **Keep the input outside the block** and pass only the dynamic list into the block:
+3. **Pass multiple named slices** to the same block:
+
+```handlebars
+{{#block name="form/skills" data="form.skills, reference.skillSuggestions" depends="form.skills, reference.skillSuggestions"}}
+{{/block}}
+```
+
+The partial receives an object:
+
+```json
+{
+  "skills": [...],
+  "skillSuggestions": [...]
+}
+```
+
+Aliases are derived from the last path segment. For explicit aliases use `as`:
+
+```handlebars
+{{#block name="form/skills" data="form.skills as formSkills, reference.skillSuggestions as refs"}}
+{{/block}}
+```
+
+The manifest stores all named slices, so `loadDataset()` still diffs and re-renders only changed blocks.
+
+4. **Keep the input outside the block** and pass only the dynamic list into the block:
 
 ```handlebars
 <input data-ignition-binding="newSkill" data-ignition-on="keydown -> addSkill()">
@@ -981,7 +1007,7 @@ Fetch a personalized dataset, diff it against the server manifest, and merge onl
 | Attribute | Element | Description |
 |-----------|---------|-------------|
 | `data-ignition-block="name"` | Any | Marks this element as a reactive block |
-| `data-ignition-data="path"` | Block | State path passed as the block template data context |
+| `data-ignition-data="path"` | Block | State path passed as the block template data context. Multiple paths: `data-ignition-data="products, categories"` |
 | `data-ignition-depends="a, b"` | Block | Comma-separated dependency paths |
 | `data-ignition-binding="path"` | Input/Select/Textarea | Two-way binding to state path |
 | `data-ignition-on="event -> action(args)"` | Any | Event handler declaration. Multiple handlers: `click -> a(); keydown -> b()` |

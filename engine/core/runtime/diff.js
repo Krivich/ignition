@@ -1,4 +1,5 @@
 import { fetchJson } from './render.js';
+import { parseBlockData } from '../../utils/parseBlockData.js';
 
 export function getSlice(data, path) {
   if (!path) return data;
@@ -24,10 +25,25 @@ function equal(a, b) {
 export function diffSlices(manifest, blockPaths, newDataset) {
   const changed = new Set();
   for (const name of Object.keys(manifest)) {
-    const path = blockPaths[name];
-    const oldSlice = manifest[name];
-    const newSlice = path ? getSlice(newDataset, path) : newDataset;
-    if (!equal(oldSlice, newSlice)) changed.add(name);
+    const dataStr = blockPaths[name];
+    const parsed = parseBlockData(dataStr);
+
+    if (parsed.mode === 'multi') {
+      const oldSlices = manifest[name] || {};
+      for (const { path, alias } of parsed.paths) {
+        const oldSlice = oldSlices[alias];
+        const newSlice = getSlice(newDataset, path);
+        if (!equal(oldSlice, newSlice)) {
+          changed.add(name);
+          break;
+        }
+      }
+    } else {
+      const path = parsed.paths[0]?.path;
+      const oldSlice = manifest[name];
+      const newSlice = path ? getSlice(newDataset, path) : newDataset;
+      if (!equal(oldSlice, newSlice)) changed.add(name);
+    }
   }
   return changed;
 }
@@ -38,10 +54,12 @@ export function diffSlices(manifest, blockPaths, newDataset) {
  */
 export function mergeSlices(state, changedBlockNames, blockPaths, newDataset) {
   for (const name of changedBlockNames) {
-    const path = blockPaths[name];
-    if (!path) continue;
-    const value = getSlice(newDataset, path);
-    setByPath(state, path, value);
+    const dataStr = blockPaths[name];
+    const parsed = parseBlockData(dataStr);
+    for (const { path } of parsed.paths) {
+      const value = getSlice(newDataset, path);
+      setByPath(state, path, value);
+    }
   }
 }
 

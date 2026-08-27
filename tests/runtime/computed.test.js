@@ -45,6 +45,17 @@ describe('ignition.computed — производные данные', () => {
       expect(sum()).toBe(3);
       expect(fn).toHaveBeenCalledTimes(1);
     });
+
+    it('не пересчитывается при изменении независимого свойства', () => {
+      const state = createReactiveState({ a: 1, b: 2, c: 100 });
+      const fn = vi.fn((s) => s.a + s.b);
+      const sum = createComputed(state, 'sum', fn);
+      expect(sum()).toBe(3);
+      expect(fn).toHaveBeenCalledTimes(1);
+      state.c = 200;
+      expect(sum()).toBe(3);
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('цепочки computed', () => {

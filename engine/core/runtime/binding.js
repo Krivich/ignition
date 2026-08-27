@@ -1,4 +1,5 @@
 import { renderTemplate, hydrate } from './render.js';
+import { parseBlockData, buildBlockContext } from '../../utils/parseBlockData.js';
 
 const actionRegistry = new Map();
 const boundElements = new WeakSet();
@@ -209,7 +210,8 @@ export function initBlocks(state, options = {}) {
         if (customRenderer) {
           data = customRenderer(state);
         } else if (dataPath) {
-          data = getByPath(state, dataPath);
+          const parsed = parseBlockData(dataPath);
+          data = buildBlockContext(state, parsed, (obj, path) => getByPath(obj, path));
         } else {
           data = state;
         }

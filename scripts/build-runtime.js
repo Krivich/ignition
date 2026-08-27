@@ -35,6 +35,9 @@ function build() {
     }, obj);
   }
 
+  // ========== parseBlockData (inlined from utils) ==========
+  ${inlineSource(path.join(ROOT, 'engine', 'utils', 'parseBlockData.js'))}
+
   // ========== helpers.js (canonical, single source) ==========
   ${inlineSource(path.join(ROOT, 'engine', 'core', 'helpers.js'))}
 

@@ -4,6 +4,7 @@ export function createReactiveState(initialData) {
   const proxyToRaw = new WeakMap();
   let notifyDepth = 0;
   let pendingNotifications = [];
+  let activeTracker = null;
 
   function doNotify(fullPath, oldVal, newVal) {
     for (const [pattern, callbacks] of listeners) {
@@ -43,6 +44,10 @@ export function createReactiveState(initialData) {
 
     const proxy = new Proxy(obj, {
       get(target, key) {
+        if (activeTracker) {
+          const path = prefix ? `${prefix}.${String(key)}` : String(key);
+          activeTracker.add(path);
+        }
         const value = target[key];
         if (value !== null && typeof value === 'object') {
           return wrap(value, prefix ? `${prefix}.${String(key)}` : String(key));
@@ -90,6 +95,15 @@ export function createReactiveState(initialData) {
         if (cbs.size === 0) listeners.delete(path);
       }
     };
+  };
+
+  state.track = function (fn) {
+    const prev = activeTracker;
+    activeTracker = new Set();
+    fn();
+    const deps = new Set(activeTracker);
+    activeTracker = prev;
+    return deps;
   };
 
   return state;

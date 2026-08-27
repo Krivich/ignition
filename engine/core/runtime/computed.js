@@ -1,4 +1,5 @@
 const registry = new WeakMap();
+const effectStack = [];
 
 function getRegistry(state) {
   if (!registry.has(state)) {
@@ -9,11 +10,16 @@ function getRegistry(state) {
 
 function flushDirty(state) {
   const computeds = getRegistry(state);
-  for (const c of computeds) {
-    if (c.dirty) {
-      c.recompute();
+  let hadDirty;
+  do {
+    hadDirty = false;
+    for (const c of computeds) {
+      if (c.dirty) {
+        c.recompute();
+        hadDirty = true;
+      }
     }
-  }
+  } while (hadDirty);
 }
 
 export function createComputed(state, name, fn) {
@@ -22,9 +28,40 @@ export function createComputed(state, name, fn) {
     fn,
     dirty: true,
     cached: undefined,
+    stateUnsubs: [],
+    children: new Set(),
+    parents: new Set(),
     recompute() {
-      entry.cached = fn(state);
+      for (const unsub of entry.stateUnsubs) {
+        unsub();
+      }
+      entry.stateUnsubs = [];
+
+      for (const child of entry.children) {
+        child.parents.delete(entry);
+      }
+      entry.children.clear();
+
+      effectStack.push(entry);
+      const deps = state.track(() => {
+        entry.cached = fn(state);
+      });
+      effectStack.pop();
+
+      for (const dep of deps) {
+        entry.stateUnsubs.push(state.subscribe(dep, () => {
+          entry.invalidate();
+        }));
+      }
+
       entry.dirty = false;
+    },
+    invalidate() {
+      if (entry.dirty) return;
+      entry.dirty = true;
+      for (const parent of entry.parents) {
+        parent.invalidate();
+      }
     }
   };
 
@@ -32,15 +69,16 @@ export function createComputed(state, name, fn) {
   computeds.push(entry);
 
   const getter = () => {
+    const parent = effectStack[effectStack.length - 1];
+    if (parent) {
+      parent.children.add(entry);
+      entry.parents.add(parent);
+    }
     if (entry.dirty) {
       flushDirty(state);
     }
     return entry.cached;
   };
-
-  state.subscribe('*', () => {
-    entry.dirty = true;
-  });
 
   entry.recompute();
 
