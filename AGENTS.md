@@ -52,14 +52,14 @@ A reactive block is declared **declaratively in the template** with the `{{#bloc
 
 ```hbs
 <section>
-    {{#block name="demo/product-list" data="products" depends="filtered"}}
+    {{#block name="demo/product-list" data="products, categories" depends="filtered"}}
         <p class="empty">Нет товаров</p>
     {{/block}}
 </section>
 ```
 
 During the SSR pass the server:
-- renders the block partial (`demo/product-list.hbs`) with the `products` slice, filling the region in HTML;
+- renders the block partial (`demo/product-list.hbs`) with the requested data slice(s), filling the region in HTML;
 - records a **compact manifest** keyed by block name — only the used slices, NOT the full dataset:
 
 ```html
@@ -75,11 +75,11 @@ The output block carries the declarative attributes the client runtime consumes:
 ```
 
 The client runtime provides:
-- **Reactive state** — deep Proxy with path-based subscriptions
-- **Blocks** — declarative DOM regions that re-render when dependencies change (`data-ignition-data` slices state; `data-ignition-depends` declares subscriptions)
+- **Reactive state** — deep Proxy with path-based subscriptions and read tracking for computed values
+- **Blocks** — declarative DOM regions that re-render when dependencies change (`data-ignition-data` slices state, supports multiple named slices; `data-ignition-depends` declares subscriptions)
 - **Bindings** — two-way data binding for form elements
 - **Actions** — named event handlers that mutate state
-- **Computed** — cached derived values with lazy recomputation
+- **Computed** — cached derived values with dependency-tracked lazy recomputation
 - **Personalized datasets** (`diff.js`) — `loadDataset(url)` diffs a freshly loaded dataset against the manifest and re-renders ONLY the changed blocks
 
 ### Key Concepts
@@ -262,9 +262,12 @@ Key settings in `engine/config/default.js`:
 | Attribute | Element | Description |
 |-----------|---------|-------------|
 | `data-ignition-block="name"` | Any | Marks this element as a reactive block |
+| `data-ignition-data="path"` | Block | State path passed as the block template data context. Multiple paths: `data-ignition-data="products, categories"` |
 | `data-ignition-depends="a, b"` | Block | Comma-separated dependency paths |
 | `data-ignition-binding="path"` | Input/Select/Textarea | Two-way binding to state path |
-| `data-ignition-on="event → action(args)"` | Any | Event handler declaration |
+| `data-ignition-on="event -> action(args)"` | Any | Event handler declaration. Multiple handlers: `click -> a(); keydown -> b()` |
+| `data-ignition-class="class: path"` | Any | Toggle class based on state path. Multiple: `class1: path1; class2: path2`. Use `!` to negate |
+| `data-ignition-attr-{name}="path"` | Any | Toggle attribute/property based on state path. Use `!` to negate |
 
 ### Page Config
 
