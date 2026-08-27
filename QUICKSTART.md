@@ -258,7 +258,7 @@ Ignition includes a client-side reactive runtime. Pages can have blocks that re-
 
 ### How It Works
 
-1. Server renders JSON + template → HTML with `data-ignition-block` placeholders
+1. Server renders JSON + template -> HTML with `data-ignition-block` regions already filled with server-rendered content
 2. Client: `ignition-runtime.js` attaches reactive state to existing DOM
 3. Blocks re-render when their dependencies change
 

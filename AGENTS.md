@@ -365,7 +365,7 @@ Ignition can be packaged in Docker as a "black box": mount `input/` (templates +
 2. Create `input/templates/{layout}/` folder for partials (if needed)
 3. Create JSON data in `input/data/{layout}/{dataset}.json`
 4. For pagination: add `{{> ignition/pagination ...}}` to the template
-5. For reactivity: add `data-ignition-block` with `data-ignition-depends` in the template
+5. For reactivity: add `{{#block name="..." data="..." depends="..."}}` in the template
 
 ### Adding a New Handlebars Helper
 
