@@ -2,6 +2,8 @@ import { renderTemplate, hydrate } from './render.js';
 
 const actionRegistry = new Map();
 const boundElements = new WeakSet();
+const classBoundElements = new WeakSet();
+const attrBoundElements = new WeakSet();
 const handledElements = new WeakSet();
 
 export function resetActions() {
@@ -39,7 +41,24 @@ export function registerAction(name, fn) {
   actionRegistry.set(name, fn);
 }
 
+function updateFormElement(element, val) {
+  const isCheckbox = element.type === 'checkbox';
+  if (isCheckbox) {
+    const bool = !!val;
+    if (element.checked !== bool) element.checked = bool;
+  } else {
+    const str = val ?? '';
+    if (element.value !== str) element.value = str;
+  }
+}
+
 export function initBinding(state, element) {
+  initFormBinding(state, element);
+  initClassBinding(state, element);
+  initAttrBinding(state, element);
+}
+
+function initFormBinding(state, element) {
   const path = element.getAttribute('data-ignition-binding');
   if (!path) return;
   if (boundElements.has(element)) return;
@@ -54,30 +73,82 @@ export function initBinding(state, element) {
   });
 
   state.subscribe(path, () => {
-    const val = getByPath(state, path);
-    if (isCheckbox) {
-      if (element.checked !== !!val) {
-        element.checked = !!val;
-      }
-    } else {
-      if (element.value !== val) {
-        element.value = val ?? '';
-      }
-    }
+    updateFormElement(element, getByPath(state, path));
   });
 
   const initial = getByPath(state, path);
   if (initial !== undefined) {
-    if (isCheckbox) {
-      if (element.checked !== !!initial) {
-        element.checked = !!initial;
-      }
-    } else {
-      if (element.value !== initial) {
-        element.value = initial;
+    updateFormElement(element, initial);
+  }
+}
+
+function coerceValue(state, expr) {
+  const neg = expr.startsWith('!');
+  const path = neg ? expr.slice(1).trim() : expr.trim();
+  const val = getByPath(state, path);
+  return neg ? !val : !!val;
+}
+
+function initClassBinding(state, element) {
+  const attr = element.getAttribute('data-ignition-class');
+  if (!attr) return;
+  if (classBoundElements.has(element)) return;
+  classBoundElements.add(element);
+
+  const rules = attr.split(';').map(s => s.trim()).filter(Boolean).map(rule => {
+    const [className, pathExpr] = rule.split(':').map(s => s.trim());
+    return { className, pathExpr };
+  });
+
+  function sync() {
+    for (const { className, pathExpr } of rules) {
+      const val = coerceValue(state, pathExpr);
+      element.classList.toggle(className, val);
+    }
+  }
+
+  const seen = new Set();
+  for (const { pathExpr } of rules) {
+    const path = pathExpr.startsWith('!') ? pathExpr.slice(1).trim() : pathExpr.trim();
+    if (seen.has(path)) continue;
+    seen.add(path);
+    state.subscribe(path, sync);
+  }
+  sync();
+}
+
+function initAttrBinding(state, element) {
+  const attrs = Array.from(element.attributes)
+    .filter(a => a.name.startsWith('data-ignition-attr-'))
+    .map(a => ({ attrName: a.name.slice('data-ignition-attr-'.length), pathExpr: a.value }));
+
+  if (attrs.length === 0) return;
+  if (attrBoundElements.has(element)) return;
+  attrBoundElements.add(element);
+
+  function sync() {
+    for (const { attrName, pathExpr } of attrs) {
+      const val = coerceValue(state, pathExpr);
+      if (attrName in element && typeof element[attrName] === 'boolean') {
+        element[attrName] = val;
+      } else {
+        if (val) {
+          element.setAttribute(attrName, 'true');
+        } else {
+          element.removeAttribute(attrName);
+        }
       }
     }
   }
+
+  const seen = new Set();
+  for (const { pathExpr } of attrs) {
+    const path = pathExpr.startsWith('!') ? pathExpr.slice(1).trim() : pathExpr.trim();
+    if (seen.has(path)) continue;
+    seen.add(path);
+    state.subscribe(path, sync);
+  }
+  sync();
 }
 
 export function processEventHandlers(state, element) {
@@ -86,17 +157,20 @@ export function processEventHandlers(state, element) {
   if (handledElements.has(element)) return;
   handledElements.add(element);
 
-  const match = attr.match(/^(\w+)\s*→\s*(\w+)(?:\s*\(([^)]*)\))?$/);
-  if (!match) return;
+  const declarations = attr.split(';').map(s => s.trim()).filter(Boolean);
+  for (const decl of declarations) {
+    const match = decl.match(/^(\w+)\s*(?:→|->)\s*(\w+)(?:\s*\(([^)]*)\))?$/);
+    if (!match) continue;
 
-  const [, eventName, actionName, argsStr] = match;
-  const args = parseArgs(argsStr);
+    const [, eventName, actionName, argsStr] = match;
+    const args = parseArgs(argsStr);
 
-  element.addEventListener(eventName, (e) => {
-    if (eventName === 'submit') e.preventDefault();
-    const handler = actionRegistry.get(actionName);
-    if (handler) handler(state, ...args, e);
-  });
+    element.addEventListener(eventName, (e) => {
+      if (eventName === 'submit') e.preventDefault();
+      const handler = actionRegistry.get(actionName);
+      if (handler) handler(state, ...args, e);
+    });
+  }
 }
 
 export function initBlocks(state, options = {}) {
@@ -112,9 +186,16 @@ export function initBlocks(state, options = {}) {
 
     const isServerFilled = block.innerHTML.trim() !== '';
 
+    function hasAttrBinding(el) {
+      return Array.from(el.attributes).some(a => a.name.startsWith('data-ignition-attr-'));
+    }
+
     function processBlockContent(root) {
-      root.querySelectorAll('[data-ignition-binding]').forEach(el => {
+      root.querySelectorAll('[data-ignition-binding], [data-ignition-class]').forEach(el => {
         initBinding(state, el);
+      });
+      root.querySelectorAll('*').forEach(el => {
+        if (hasAttrBinding(el)) initBinding(state, el);
       });
       root.querySelectorAll('[data-ignition-on]').forEach(el => {
         processEventHandlers(state, el);

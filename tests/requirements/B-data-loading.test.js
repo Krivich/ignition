@@ -29,6 +29,7 @@ describe('B. Page weight and data loading (real engine)', () => {
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(projectRoot, 'tmp', 'ignition-b-'));
     config.source.templates = path.join(tmpDir, 'input', 'templates');
+    config.source.data = path.join(tmpDir, 'input', 'data');
     config.output.html = path.join(tmpDir, 'output', 'public');
     config.output.data = path.join(tmpDir, 'output', 'public', 'data');
     config.output.templates = path.join(tmpDir, 'output', 'public', 'templates');

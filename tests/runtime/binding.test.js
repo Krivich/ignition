@@ -409,4 +409,178 @@ describe('ignition — привязки и обработчики', () => {
       expect(block.innerHTML).not.toContain('Ноутбук');
     });
   });
+
+  describe('несколько data-ignition-on на одном элементе', () => {
+    let state;
+
+    beforeEach(() => {
+      state = createReactiveState({ count: 0 });
+    });
+
+    it('поддерживает два обработчика через точку с запятой', () => {
+      const clickHandler = vi.fn();
+      const keydownHandler = vi.fn();
+      registerAction('onClick', clickHandler);
+      registerAction('onKeydown', keydownHandler);
+
+      const div = document.createElement('div');
+      div.setAttribute('data-ignition-on', 'click -> onClick(); keydown -> onKeydown()');
+      document.body.appendChild(div);
+      processEventHandlers(state, div);
+
+      div.click();
+      expect(clickHandler).toHaveBeenCalledTimes(1);
+      expect(keydownHandler).not.toHaveBeenCalled();
+
+      div.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      expect(keydownHandler).toHaveBeenCalledTimes(1);
+      expect(clickHandler).toHaveBeenCalledTimes(1);
+    });
+
+    it('сохраняет аргументы для каждого обработчика', () => {
+      const clickHandler = vi.fn();
+      const keydownHandler = vi.fn();
+      registerAction('add', clickHandler);
+      registerAction('submit', keydownHandler);
+
+      const div = document.createElement('div');
+      div.setAttribute('data-ignition-on', 'click -> add(1, 2); keydown -> submit(42)');
+      document.body.appendChild(div);
+      processEventHandlers(state, div);
+
+      div.click();
+      expect(clickHandler).toHaveBeenCalledWith(state, 1, 2, expect.any(Event));
+
+      div.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      expect(keydownHandler).toHaveBeenCalledWith(state, 42, expect.any(KeyboardEvent));
+    });
+
+    it('одиночный обработчик продолжает работать', () => {
+      const handler = vi.fn();
+      registerAction('single', handler);
+
+      const btn = document.createElement('button');
+      btn.setAttribute('data-ignition-on', 'click -> single()');
+      document.body.appendChild(btn);
+      processEventHandlers(state, btn);
+
+      btn.click();
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('data-ignition-class — привязка классов', () => {
+    let state;
+
+    beforeEach(() => {
+      state = createReactiveState({
+        form: { errors: { email: null } },
+        ui: { active: false }
+      });
+    });
+
+    it('добавляет класс, когда значение truthy', () => {
+      const div = document.createElement('div');
+      div.setAttribute('data-ignition-class', 'is-active: ui.active');
+      document.body.appendChild(div);
+      initBinding(state, div);
+
+      expect(div.classList.contains('is-active')).toBe(false);
+      state.ui.active = true;
+      expect(div.classList.contains('is-active')).toBe(true);
+    });
+
+    it('удаляет класс, когда значение falsy', () => {
+      const div = document.createElement('div');
+      div.setAttribute('data-ignition-class', 'is-invalid: form.errors.email');
+      document.body.appendChild(div);
+      initBinding(state, div);
+
+      state.form.errors.email = 'required';
+      expect(div.classList.contains('is-invalid')).toBe(true);
+      state.form.errors.email = null;
+      expect(div.classList.contains('is-invalid')).toBe(false);
+    });
+
+    it('поддерживает несколько class bindings через точку с запятой', () => {
+      const div = document.createElement('div');
+      div.setAttribute('data-ignition-class', 'is-active: ui.active; is-invalid: form.errors.email');
+      document.body.appendChild(div);
+      initBinding(state, div);
+
+      state.ui.active = true;
+      state.form.errors.email = 'required';
+      expect(div.classList.contains('is-active')).toBe(true);
+      expect(div.classList.contains('is-invalid')).toBe(true);
+    });
+
+    it('не дублирует обработчики при повторном вызове', () => {
+      const div = document.createElement('div');
+      div.setAttribute('data-ignition-class', 'is-active: ui.active');
+      document.body.appendChild(div);
+      initBinding(state, div);
+      initBinding(state, div);
+
+      state.ui.active = true;
+      expect(div.classList.contains('is-active')).toBe(true);
+    });
+  });
+
+  describe('data-ignition-attr-* — привязка атрибутов', () => {
+    let state;
+
+    beforeEach(() => {
+      state = createReactiveState({
+        ui: { valid: false },
+        form: { consent: false }
+      });
+    });
+
+    it('устанавливает boolean-атрибут, когда значение truthy', () => {
+      const btn = document.createElement('button');
+      btn.setAttribute('data-ignition-attr-disabled', 'ui.valid');
+      document.body.appendChild(btn);
+      initBinding(state, btn);
+
+      expect(btn.disabled).toBe(false);
+      state.ui.valid = true;
+      expect(btn.disabled).toBe(true);
+    });
+
+    it('удаляет boolean-атрибут, когда значение falsy', () => {
+      const btn = document.createElement('button');
+      btn.setAttribute('data-ignition-attr-disabled', 'ui.valid');
+      document.body.appendChild(btn);
+      initBinding(state, btn);
+
+      state.ui.valid = true;
+      expect(btn.disabled).toBe(true);
+      state.ui.valid = false;
+      expect(btn.disabled).toBe(false);
+    });
+
+    it('поддерживает отрицание через префикс !', () => {
+      const btn = document.createElement('button');
+      btn.setAttribute('data-ignition-attr-disabled', '!ui.valid');
+      document.body.appendChild(btn);
+      initBinding(state, btn);
+
+      expect(btn.disabled).toBe(true);
+      state.ui.valid = true;
+      expect(btn.disabled).toBe(false);
+    });
+
+    it('работает с произвольными атрибутами', () => {
+      const input = document.createElement('input');
+      input.setAttribute('data-ignition-attr-aria-invalid', 'form.consent');
+      document.body.appendChild(input);
+      initBinding(state, input);
+
+      expect(input.getAttribute('aria-invalid')).toBe(null);
+      state.form.consent = true;
+      expect(input.getAttribute('aria-invalid')).toBe('true');
+      state.form.consent = false;
+      expect(input.getAttribute('aria-invalid')).toBe(null);
+    });
+  });
 });

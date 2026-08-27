@@ -55,8 +55,16 @@ function build() {
 
   // ========== Boot ==========
   function processAllBindings(state, root) {
-    var elements = (root || document).querySelectorAll('[data-ignition-binding]');
-    elements.forEach(function (el) { initBinding(state, el); });
+    var scope = root || document;
+    scope.querySelectorAll('[data-ignition-binding], [data-ignition-class]').forEach(function (el) {
+      initBinding(state, el);
+    });
+    scope.querySelectorAll('*').forEach(function (el) {
+      var hasAttr = Array.prototype.some.call(el.attributes, function (a) {
+        return a.name.indexOf('data-ignition-attr-') === 0;
+      });
+      if (hasAttr) initBinding(state, el);
+    });
   }
 
   function processAllEventHandlers(state, root) {

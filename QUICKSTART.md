@@ -278,10 +278,15 @@ Layout template (`input/templates/demo.hbs`):
     <script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js"></script>
     <script src="/assets/ignition-runtime.js"></script>
     <script src="/assets/templates.js"></script>
-    <script>window.__IGNITION_MANIFEST__ = {{{manifest}}};</script>
+    <script>window.__IGNITION_INITIAL_DATA__ = {{{initialData}}};</script>
 </head>
 <body>
-    {{#block name="demo/product-list" data="products" depends="filtered"}}
+    <input type="search"
+           placeholder="Поиск..."
+           data-ignition-binding="ui.query"
+           data-ignition-on="input -> filter()">
+
+    {{#block name="demo/product-list" data="filtered" depends="filtered"}}
         <p class="empty">Нет товаров</p>
     {{/block}}
 </body>
@@ -303,27 +308,53 @@ Data (`input/data/demo/app.json`):
 
 ```json
 {
+  "ui": { "query": "" },
   "products": [
-    { "name": "Ноутбук", "price": 59990 },
-    { "name": "Мышь", "price": 1990 }
+    { "id": 1, "name": "Ноутбук", "price": 59990 },
+    { "id": 2, "name": "Мышь", "price": 1990 }
+  ],
+  "filtered": [
+    { "id": 1, "name": "Ноутбук", "price": 59990 },
+    { "id": 2, "name": "Мышь", "price": 1990 }
   ]
 }
 ```
 
-The server fills the block with real HTML and emits a compact, block-keyed manifest:
+Page config (optional, for actions and computed values):
 
 ```html
-<script>window.__IGNITION_MANIFEST__ = {"demo/product-list":[{"name":"Ноутбук","price":59990},{"name":"Мышь","price":1990}]};</script>
+<script>
+window.__IGNITION_PAGE_CONFIG__ = function(state, api) {
+    api.action('filter', function(s) {
+        var q = (s.ui.query || '').trim().toLowerCase();
+        s.filtered = q
+            ? s.products.filter(function(p) { return p.name.toLowerCase().indexOf(q) !== -1; })
+            : s.products;
+    });
+};
+</script>
 ```
+
+> **Note:** this example uses `__IGNITION_INITIAL_DATA__` because the page has bindings (`ui.query`) and actions. For a read-only content page that only needs reactive blocks, use `__IGNITION_MANIFEST__` — it is a compact, block-keyed subset of the dataset and produces a lighter first render.
+
+### `__IGNITION_MANIFEST__` vs `__IGNITION_INITIAL_DATA__`
+
+| Variable | Use for | Payload |
+|---|---|---|
+| `__IGNITION_MANIFEST__` | Read-only pages: catalogs, articles, landing blocks | Only the slices used by blocks (small, SEO-friendly) |
+| `__IGNITION_INITIAL_DATA__` | Interactive pages: forms, filters, dashboards | Full dataset — everything bindings/actions need |
+
+If your page uses `data-ignition-binding` or reads state paths outside block slices, use `__IGNITION_INITIAL_DATA__`. If it only renders blocks, use `__IGNITION_MANIFEST__`.
 
 ### Key Features
 
 - **Reactive state** — deep Proxy with path-based subscriptions
-- **Blocks** — declarative DOM regions that re-render when dependencies change
+- **Blocks** — declarative DOM regions that re-render when dependencies change (`{{#block}}`)
 - **Bindings** — two-way data binding for form elements (`data-ignition-binding`)
 - **Actions** — named event handlers that mutate state (`data-ignition-on`)
+- **Class/attr bindings** — declarative class and attribute toggles
 - **Computed** — cached derived values with lazy recomputation
-- **Custom renderers** — control what data reaches each block template
+- **Custom renderers** — fallback control over block data context
 - **Lifecycle hooks** — `afterHydrate` callback after each block render
 
 For full documentation, see [REACTIVITY.md](REACTIVITY.md).
