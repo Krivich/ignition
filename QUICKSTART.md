@@ -252,6 +252,84 @@ If the layout has **no** `ignition/pagination` call, a single HTML file `{datase
 
 ---
 
+## Reactivity
+
+Ignition includes a client-side reactive runtime. Pages can have blocks that re-render automatically when data changes — no page reload needed.
+
+### How It Works
+
+1. Server renders JSON + template → HTML with `data-ignition-block` placeholders
+2. Client: `ignition-runtime.js` attaches reactive state to existing DOM
+3. Blocks re-render when their dependencies change
+
+```
+Server:  JSON + Template → HTML (pre-rendered, SEO-friendly)
+Client:  HTML → Reactive State → Blocks re-render on data changes
+```
+
+### Basic Example
+
+Layout template (`input/templates/demo.hbs`):
+
+```handlebars
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js"></script>
+    <script src="/assets/ignition-runtime.js"></script>
+    <script src="/assets/templates.js"></script>
+    <script>window.__IGNITION_MANIFEST__ = {{{manifest}}};</script>
+</head>
+<body>
+    {{#block name="demo/product-list" data="products" depends="filtered"}}
+        <p class="empty">Нет товаров</p>
+    {{/block}}
+</body>
+</html>
+```
+
+Block template (`input/templates/demo/product-list.hbs`):
+
+```handlebars
+{{#each this}}
+<div class="product">
+    <span class="p-name">{{name}}</span>
+    <span class="p-price">{{price}} руб.</span>
+</div>
+{{/each}}
+```
+
+Data (`input/data/demo/app.json`):
+
+```json
+{
+  "products": [
+    { "name": "Ноутбук", "price": 59990 },
+    { "name": "Мышь", "price": 1990 }
+  ]
+}
+```
+
+The server fills the block with real HTML and emits a compact, block-keyed manifest:
+
+```html
+<script>window.__IGNITION_MANIFEST__ = {"demo/product-list":[{"name":"Ноутбук","price":59990},{"name":"Мышь","price":1990}]};</script>
+```
+
+### Key Features
+
+- **Reactive state** — deep Proxy with path-based subscriptions
+- **Blocks** — declarative DOM regions that re-render when dependencies change
+- **Bindings** — two-way data binding for form elements (`data-ignition-binding`)
+- **Actions** — named event handlers that mutate state (`data-ignition-on`)
+- **Computed** — cached derived values with lazy recomputation
+- **Custom renderers** — control what data reaches each block template
+- **Lifecycle hooks** — `afterHydrate` callback after each block render
+
+For full documentation, see [REACTIVITY.md](REACTIVITY.md).
+
+---
+
 ## Helpers
 
 Built-in helpers are available in **any** template (server-side and client-side).
@@ -429,16 +507,19 @@ for (const lang of langs) {
 
 ```bash
 # Full build
-npx ignition build
+npm run build
 
 # Watch mode (auto-rebuild on changes)
-npx ignition watch
+npm run watch
 
-# With custom paths and domain
-npx ignition build --source ./input --output ./output --domain https://mysite.com
+# Watch + local server in parallel
+npm run dev
 
 # Local server
-npx serve output/public
+npm run serve
+
+# Run all tests
+npm run test
 ```
 
 ### build
@@ -471,7 +552,9 @@ Monitors `input/templates/` and `input/data/`. File change → rebuild dependent
 ```
 output/public/
 ├── assets/
-│   └── ignition-pagination.js          ← client-side JS (automatic)
+│   ├── ignition-runtime.js           ← client-side reactive runtime (automatic)
+│   ├── ignition-pagination.js        ← client-side CSR pagination (automatic)
+│   └── templates.js                  ← compiled Handlebars templates (automatic)
 ├── {layout}/
 │   └── {dataset}/
 │       └── page/
@@ -480,10 +563,10 @@ output/public/
 │           └── ...
 ├── data/
 │   └── {layout}/
-│       └── {dataset}.json              ← data for CSR
+│       └── {dataset}.json              ← data for CSR pagination
 ├── templates/
 │   └── {layout}/
-│       └── {partial}.hbs              ← template for CSR
+│       └── {partial}.hbs              ← template for CSR pagination
 ├── sitemap.xml
 └── robots.txt
 ```
@@ -497,18 +580,32 @@ The engine automatically prepares everything for client-side pagination:
 - **HTML** is pre-rendered → SEO indexes it
 - **JSON** is copied to `output/public/data/` → available via fetch
 - **Template** is copied to `output/public/templates/` → compiled on the client
-- **ignition-pagination.js** is loaded → captures clicks
+- **ignition-runtime.js** registers the common reactivity runtime (templates, helpers, state)
+- **ignition-pagination.js** uses that runtime to fetch the next page slice and update the DOM
 
 When `data-page` is clicked:
 1. `fetch()` loads the JSON
-2. Handlebars compiles the template on the client
-3. DOM updates atomically (no page reload)
-4. URL updates via `history.pushState`
+2. The page slice is exposed as reactive state
+3. The shared runtime renders the page template (no duplicated helpers, no bespoke class)
+4. DOM updates atomically (no page reload)
+5. URL updates via `history.pushState`
 
 ### Required Page Includes
 
+For reactive pages (with blocks, bindings, actions):
+
 ```html
 <script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js"></script>
+<script src="/assets/ignition-runtime.js"></script>
+<script src="/assets/templates.js"></script>
+<script>window.__IGNITION_MANIFEST__ = {{{manifest}}};</script>
+```
+
+For pages with client-side pagination only:
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js"></script>
+<script src="/assets/ignition-runtime.js" defer></script>
 <script src="/assets/ignition-pagination.js" defer></script>
 ```
 
@@ -543,7 +640,7 @@ FROM node:18-alpine
 WORKDIR /app
 COPY . .
 RUN npm ci --omit=dev
-CMD ["node", "bin/cli.js", "watch"]
+CMD ["node", "engine/bin/cli.js", "watch"]
 ```
 
 ```bash
@@ -637,4 +734,8 @@ Commit JSON → pipeline → `ignition build` → HTML → hosting serves it. CS
 3. If pagination is needed:
    - Add `{{> ignition/pagination ...}}` to the layout
    - Create `input/templates/{layout}/page.hbs` — single page partial
-4. Run `npx ignition build`
+4. If reactivity is needed:
+   - Include `ignition-runtime.js`, `templates.js`, and `__IGNITION_MANIFEST__` in `<head>`
+   - Add `{{#block name="..." data="..." depends="..."}}...{{/block}}` in the body
+   - Add `window.__IGNITION_PAGE_CONFIG__` for actions, renderers, etc.
+5. Run `npm run build`

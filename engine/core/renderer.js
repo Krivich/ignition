@@ -15,6 +15,7 @@ import {
     registerHelpers
 } from './handlebars.js';
 import { paginateCollection, preparePageData } from './pagination.js';
+import { resetManifest, getManifest } from './helpers.js';
 import config from '../config/default.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -50,10 +51,17 @@ export async function renderTemplate(templatePath, data, outputDir, dataset, lay
         } else {
             // Regular rendering
             const { layout: _l, dataset: _d, ...pureData } = data;
-            const html = template({ ...data, initialData: JSON.stringify(pureData) });
+            resetManifest();
+            const html = template({
+                ...data,
+                initialData: JSON.stringify(pureData),
+                manifest: 'IGNITION_MANIFEST_PLACEHOLDER__'
+            });
+            const renderedManifest = JSON.stringify(getManifest());
+            const finalHtml = html.split('IGNITION_MANIFEST_PLACEHOLDER__').join(renderedManifest);
             const outputPath = path.join(outputDir, `${dataset}.html`);
             await safeMkdir(path.dirname(outputPath));
-            await atomicWrite(outputPath, html);
+            await atomicWrite(outputPath, finalHtml);
             logger.info(`✅ Rendered single page: ${dataset}.html`);
         }
 
@@ -192,28 +200,4 @@ export async function generateClientArtifacts(dataPath, layout, dataset) {
     }
 }
 
-export function parseHandlebarsParams(paramsStr) {
-    const params = {};
-    const paramRegex = /(\w+)=(?:"([^"]+)"|(\w+))/g;
-    let match;
-
-    while ((match = paramRegex.exec(paramsStr)) !== null) {
-        const key = match[1];
-        const value = match[2] || match[3];
-        params[key] = isNaN(value) ? value : Number(value);
-    }
-
-    // Support for new format with fallback for backward compatibility
-    if (params.pageTemplate) {
-        params.fullTemplatePath = params.pageTemplate; // "catalog/page"
-        params.templateName = params.pageTemplate.split('/')[0]; // "catalog"
-        params.template = params.pageTemplate.split('/')[1]; // "page"
-    } else {
-        // Old format (for backward compatibility)
-        params.template = params.template || 'pagination';
-        params.fullTemplatePath = `${params.layout || 'catalog'}/${params.template}`;
-        params.templateName = params.layout || 'catalog';
-    }
-
-    return params;
-}
+export { parseHandlebarsParams } from '../utils/parseParams.js';

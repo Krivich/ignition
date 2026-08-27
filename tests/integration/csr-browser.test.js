@@ -45,6 +45,7 @@ describe('CSR pagination in real browser', () => {
 <head>
   <title>{{title}}</title>
   <script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js"></script>
+  <script src="/assets/ignition-runtime.js" defer></script>
   <script src="/assets/ignition-pagination.js" defer></script>
 </head>
 <body>

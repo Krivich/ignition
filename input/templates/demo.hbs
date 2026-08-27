@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{title}} — {{siteName}}</title>
+    <script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js"></script>
+    <script src="/assets/ignition-runtime.js"></script>
+    <script src="/assets/templates.js"></script>
+    <script>window.__IGNITION_MANIFEST__ = {{{manifest}}};</script>
+</head>
+<body>
+    <h1>{{title}}</h1>
+
+    <main>
+        <input type="search"
+               placeholder="Поиск по каталогу..."
+               data-ignition-binding="ui.query"
+               data-ignition-on="input → filter()">
+
+        <section class="list">
+            {{#block name="product-list" data="products" depends="filtered"}}
+                <p class="empty">Нет товаров</p>
+            {{/block}}
+        </section>
+    </main>
+
+    <footer>
+        <p>{{siteName}} &copy; {{footer.copyright}}</p>
+    </footer>
+
+    <script>
+    window.__IGNITION_PAGE_CONFIG__ = function(state, api) {
+        api.action('filter', function(s) {
+            var q = (s.ui.query || '').trim().toLowerCase();
+            s.filtered = q
+                ? s.products.filter(function(p) { return p.name.toLowerCase().indexOf(q) !== -1; })
+                : s.products;
+        });
+        if (!state.filtered) {
+            state.filtered = state.products;
+        }
+    };
+    </script>
+</body>
+</html>

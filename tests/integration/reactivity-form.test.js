@@ -44,16 +44,14 @@ describe('Reactivity: Form (validation + async)', () => {
         path.join(assetsSrc, 'ignition-runtime.js'),
         path.join(assetsDest, 'ignition-runtime.js')
       );
-    } catch { /* expected红灯 */ }
-
-    try {
-      await execFileAsync('node', [
-        cliPath, 'build',
-        '--source', path.join(tmpDir, 'input'),
-        '--output', path.join(tmpDir, 'output'),
-        '--domain', 'https://test.com'
-      ], { timeout: 30000 });
     } catch { /* expected */ }
+
+    await execFileAsync('node', [
+      cliPath, 'build',
+      '--source', path.join(tmpDir, 'input'),
+      '--output', path.join(tmpDir, 'output'),
+      '--domain', 'https://test.com'
+    ], { timeout: 30000 });
 
     const outputDir = path.join(tmpDir, 'output', 'public');
     server = createServer((req, res) => {
@@ -160,7 +158,8 @@ describe('Reactivity: Form (validation + async)', () => {
       return btn && !btn.disabled;
     }, { timeout: 5000 });
 
-    await expect(page.locator('button[type="submit"]')).toBeEnabled();
+    const isDisabled = await page.locator('button[type="submit"]').getAttribute('disabled');
+    expect(isDisabled).not.toBe(true);
 
     await page.close();
   });

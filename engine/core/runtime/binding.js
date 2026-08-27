@@ -1,6 +1,8 @@
 import { renderTemplate, hydrate } from './render.js';
 
 const actionRegistry = new Map();
+const boundElements = new WeakSet();
+const handledElements = new WeakSet();
 
 export function resetActions() {
   actionRegistry.clear();
@@ -40,6 +42,8 @@ export function registerAction(name, fn) {
 export function initBinding(state, element) {
   const path = element.getAttribute('data-ignition-binding');
   if (!path) return;
+  if (boundElements.has(element)) return;
+  boundElements.add(element);
 
   const tag = element.tagName.toLowerCase();
   const isCheckbox = element.type === 'checkbox';
@@ -79,6 +83,8 @@ export function initBinding(state, element) {
 export function processEventHandlers(state, element) {
   const attr = element.getAttribute('data-ignition-on');
   if (!attr) return;
+  if (handledElements.has(element)) return;
+  handledElements.add(element);
 
   const match = attr.match(/^(\w+)\s*→\s*(\w+)(?:\s*\(([^)]*)\))?$/);
   if (!match) return;
@@ -117,7 +123,15 @@ export function initBlocks(state, options = {}) {
 
     function render() {
       try {
-        const data = customRenderer ? customRenderer(state) : state;
+        const dataPath = block.getAttribute('data-ignition-data');
+        let data;
+        if (customRenderer) {
+          data = customRenderer(state);
+        } else if (dataPath) {
+          data = getByPath(state, dataPath);
+        } else {
+          data = state;
+        }
         const html = renderTemplate(templateName, data);
         hydrate(block, html);
         processBlockContent(block);

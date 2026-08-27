@@ -171,10 +171,11 @@ describe('CLI: ignition build', () => {
     );
     expect(robots).toContain('Sitemap: https://test.com/sitemap.xml');
 
-    // Client-side JS was copied
+    // Client-side JS was copied and integrates with the common runtime (G5)
     const jsPath = path.join(tmpDir, 'output', 'public', 'assets', 'ignition-pagination.js');
     const jsContent = await fs.readFile(jsPath, 'utf8');
-    expect(jsContent).toContain('IgnitionPagination');
+    expect(jsContent).toContain('ignition');
+    expect(jsContent).toContain('window.ignition');
   });
 
   it('SSR+CSR pagination: each page is a standalone HTML with CSR hook', async () => {

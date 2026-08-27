@@ -8,9 +8,15 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Handlebars from 'handlebars';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 // Import server-side helpers
 import { registerHelpers as registerServerHelpers } from '../../engine/core/handlebars.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(__dirname, '..', '..');
 
 describe('F. Isomorphic templates and helpers', () => {
   beforeEach(() => {
@@ -117,9 +123,9 @@ describe('F. Isomorphic templates and helpers', () => {
   });
 
   describe('F3: No code duplication for helper registration', () => {
-    it('helpers are defined in handlebars.js and available to both environments', () => {
-      // After calling registerHelpers from handlebars.js,
-      // all helpers should be available via Handlebars global
+    it('helpers are defined in a single source shared by both environments', () => {
+      // The server-side registerHelpers() delegates to the SAME canonical
+      // registerHelpersWith() source that the client IIFE is generated from.
       registerServerHelpers();
 
       expect(Handlebars.helpers.times).toBeDefined();
@@ -130,26 +136,32 @@ describe('F. Isomorphic templates and helpers', () => {
       expect(Handlebars.helpers.json).toBeDefined();
     });
 
-    it('client-side runtime uses the same helper implementations', () => {
-      // The ignition-runtime.js boot() should register the same helpers
-      // This test verifies that the client-side registration is NOT a separate copy
+    it('helpers.js (single source) is shared: server delegates, IIFE is generated from it', () => {
+      // The server entry points at the canonical module, not a private copy.
+      const handlebarsSrc = fs.readFileSync(
+        path.join(projectRoot, 'engine', 'core', 'handlebars.js'),
+        'utf8'
+      );
+      expect(handlebarsSrc).toContain("registerHelpersWith } from './helpers.js'");
+      expect(handlebarsSrc).toContain('registerHelpersWith(Handlebars)');
 
+      // The client IIFE bundle is GENERATED from the same helpers.js source
+      // (via scripts/build-runtime.js), so no hand-duplicated copies live there.
+      const iifeSrc = fs.readFileSync(
+        path.join(projectRoot, 'engine', 'core', 'assets', 'ignition-runtime.js'),
+        'utf8'
+      );
+      // The bundle must contain the helper bodies sourced from helpers.js
+      expect(iifeSrc).toContain('declineWord');
+      const buildScript = fs.readFileSync(
+        path.join(projectRoot, 'scripts', 'build-runtime.js'),
+        'utf8'
+      );
+      expect(buildScript).toContain('helpers.js');
+    });
+
+    it('the single source produces identical results on server and client', async () => {
       registerServerHelpers();
-      const serverTimes = Handlebars.helpers.times;
-
-      // Reset and re-register as client would
-      delete Handlebars.helpers.times;
-
-      // Simulate client-side registration (same function)
-      Handlebars.registerHelper('times', function(n, block) {
-        let accum = '';
-        for (let i = 1; i <= n; ++i) { accum += block.fn(i); }
-        return accum;
-      });
-
-      const clientTimes = Handlebars.helpers.times;
-
-      // Both produce same result
       const template = '{{#times 3}}{{this}} {{/times}}';
       expect(Handlebars.compile(template)({})).toBe('1 2 3 ');
     });

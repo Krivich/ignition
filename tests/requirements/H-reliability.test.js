@@ -25,13 +25,17 @@ describe('H. Reliability and compatibility', () => {
       expect(html).not.toContain('ignition-runtime.js');
     });
 
-    it('extmob page has block content in HTML', () => {
-      const html = readBuiltHTML('extmob/default.html');
+    it('demo page has server-rendered block content in HTML', () => {
+      const html = readBuiltHTML('demo/app.html');
 
       // Blocks should have server-rendered content
       const blockMatch = html.match(/data-ignition-block="[^"]*"/g);
       expect(blockMatch).not.toBeNull();
       expect(blockMatch.length).toBeGreaterThan(0);
+
+      // And the product content is actually inside the block
+      expect(html).toContain('class="product"');
+      expect(html).toContain('Ноутбук');
     });
 
     it('reactive blocks contain data when dataset provides it', () => {
@@ -117,7 +121,7 @@ describe('H. Reliability and compatibility', () => {
     });
 
     it('built page escapes </script> in inline data', () => {
-      const html = readBuiltHTML('extmob/default.html');
+      const html = readBuiltHTML('demo/app.html');
 
       // Check that there are no unescaped </script> inside script blocks
       // (except the legitimate closing </script> tags)
@@ -154,8 +158,8 @@ describe('H. Reliability and compatibility', () => {
       // Catalog pages
       expect(fs.existsSync(path.join(outputDir, 'catalog', 'books', 'page', '1.html'))).toBe(true);
 
-      // ExtMob page
-      expect(fs.existsSync(path.join(outputDir, 'extmob', 'default.html'))).toBe(true);
+      // Demo page
+      expect(fs.existsSync(path.join(outputDir, 'demo', 'app.html'))).toBe(true);
     });
 
     it('data files are copied to output', () => {
@@ -163,7 +167,7 @@ describe('H. Reliability and compatibility', () => {
 
       expect(fs.existsSync(path.join(dataDir, 'landing', 'default.json'))).toBe(true);
       expect(fs.existsSync(path.join(dataDir, 'catalog', 'books.json'))).toBe(true);
-      expect(fs.existsSync(path.join(dataDir, 'extmob', 'default.json'))).toBe(true);
+      expect(fs.existsSync(path.join(dataDir, 'demo', 'app.json'))).toBe(true);
     });
 
     it('sitemap is generated', () => {

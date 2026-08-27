@@ -76,11 +76,14 @@ Ignition can serve as the foundation for an **"AI version of Tilda"**:
 ### Current (v1.0)
 
 - **Hybrid SSR/CSR architecture** — SEO + interactivity
+- **Client-side reactivity** — reactive state, blocks, bindings, actions, computed values
 - **Declarative pagination** — via system partial `ignition/pagination`
 - **Atomic updates** — files not corrupted on overwrite (fs.rename)
 - **Incremental rebuilds** — change JSON → pages update
 - **SEO optimization** — automatic sitemap.xml and robots.txt
 - **Custom Handlebars helpers** — times, ifCond, json, concat, declineWord, get
+- **Isomorphic helpers** — same helpers work server-side and client-side
+- **Lifecycle hooks** — `afterHydrate` callback for DOM state restoration
 - **Cross-platform** — Linux, macOS, Windows
 
 ### Architecture
@@ -115,8 +118,11 @@ my-project/
 ├── input/
 │   ├── templates/
 │   │   ├── catalog.hbs           # Layout
-│   │   └── catalog/
-│   │       └── page.hbs          # Pagination partial
+│   │   ├── catalog/
+│   │   │   └── page.hbs          # Pagination partial
+│   │   ├── demo.hbs              # Reactive blocks demo
+│   │   └── demo/
+│   │       └── product-list.hbs  # Block partial
 │   └── data/
 │       └── catalog/
 │           └── books.json        # Data
@@ -133,7 +139,8 @@ my-project/
     <meta charset="UTF-8">
     <title>{{title}}</title>
     <script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js"></script>
-    <script src="/assets/ignition-pagination.js" defer></script>
+    <script src="/assets/ignition-runtime.js"></script>
+    <script src="/assets/templates.js"></script>
 </head>
 <body>
     <h1>{{title}}</h1>

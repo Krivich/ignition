@@ -35,6 +35,11 @@ describe('fs utilities', () => {
       await fs.mkdir(dir, { recursive: true });
       await expect(safeMkdir(dir, tmpDir)).resolves.not.toThrow();
     });
+
+    it('throws on path traversal outside project root', async () => {
+      const absPath = path.resolve(tmpDir, '..', '..', 'some', 'outside', 'dir');
+      await expect(safeMkdir(absPath, tmpDir)).rejects.toThrow('Path traversal detected');
+    });
   });
 
   describe('atomicWrite', () => {

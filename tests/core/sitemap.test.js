@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import path from 'path';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 import os from 'os';
 import { generateSitemap } from '../../engine/core/sitemap.js';
+import config from '../../engine/config/default.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -12,6 +13,7 @@ describe('generateSitemap', () => {
   let originalHtml;
 
   beforeEach(async () => {
+    originalHtml = config.output.html;
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ignition-sitemap-'));
 
     // Create some HTML files
@@ -21,16 +23,12 @@ describe('generateSitemap', () => {
     await fs.writeFile(path.join(tmpDir, 'catalog', 'books', 'page', '2.html'), '<h1>Page 2</h1>');
     await fs.writeFile(path.join(tmpDir, 'landing', 'default.html'), '<h1>Landing</h1>');
 
-    // Store original config values
-    originalHtml = (await import('../../engine/config/default.js')).default.output.html;
     // Temporarily override config
-    const config = (await import('../../engine/config/default.js')).default;
     config.output.html = tmpDir;
   });
 
   afterEach(async () => {
     // Restore config
-    const config = (await import('../../engine/config/default.js')).default;
     config.output.html = originalHtml;
     await fs.rm(tmpDir, { recursive: true, force: true });
   });

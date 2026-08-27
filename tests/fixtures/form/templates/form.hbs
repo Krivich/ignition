@@ -11,6 +11,57 @@
     <script>
         window.__IGNITION_INITIAL_DATA__ = {{{initialData}}};
     </script>
+    <script>
+    window.__IGNITION_PAGE_CONFIG__ = function(state, api) {
+        api.blockOptions.renderers['form/contact'] = function(s) { return s; };
+
+        function validate(s) {
+            var errors = {};
+            if (!s.form.fields.name) errors.name = 'Обязательное поле';
+            if (!s.form.fields.email) errors.email = 'Обязательное поле';
+            else if (s.form.fields.email.indexOf('@') === -1) errors.email = 'Некорректный email';
+            if (!s.form.fields.message) errors.message = 'Обязательное поле';
+            s.form.errors = errors;
+            return Object.keys(errors).length === 0;
+        }
+
+        api.action('formSubmit', function(s) {
+            var valid = validate(s);
+            if (!valid) return;
+            s.form.submitting = true;
+            setTimeout(function() {
+                s.form.submitting = false;
+                s.form.submitted = true;
+            }, 500);
+        });
+
+        api.action('formReset', function(s) {
+            s.form.fields = { name: '', email: '', message: '' };
+            s.form.errors = {};
+            s.form.submitting = false;
+            s.form.submitted = false;
+        });
+
+        state.subscribe('form.fields', function() { validate(state); });
+
+        function updateButton() {
+            var btn = document.querySelector('button[type="submit"]');
+            if (!btn) return;
+            var valid = Object.keys(state.form.errors).length === 0;
+            var hasValues = state.form.fields.name && state.form.fields.email && state.form.fields.message;
+            btn.disabled = !(valid && hasValues);
+        }
+        state.subscribe('form', function() { updateButton(); });
+        setTimeout(updateButton, 0);
+
+        document.addEventListener('focusout', function(e) {
+            if (e.target.matches('[data-ignition-binding]')) {
+                validate(state);
+                updateButton();
+            }
+        });
+    };
+    </script>
 
     <style>
         body { font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; }

@@ -1,0 +1,12 @@
+{
+  "title": "Главная",
+  "siteName": "Ignition Demo",
+  "products": [
+    { "id": 1, "name": "Товар А", "price": 100 },
+    { "id": 2, "name": "Товар Б", "price": 200 },
+    { "id": 3, "name": "Товар В", "price": 300 }
+  ],
+  "footer": {
+    "copyright": "2026"
+  }
+}

@@ -46,14 +46,12 @@ describe('Reactivity: Dashboard (multi-block + computed chains)', () => {
       );
     } catch { /* expected */ }
 
-    try {
-      await execFileAsync('node', [
-        cliPath, 'build',
-        '--source', path.join(tmpDir, 'input'),
-        '--output', path.join(tmpDir, 'output'),
-        '--domain', 'https://test.com'
-      ], { timeout: 30000 });
-    } catch { /* expected */ }
+    await execFileAsync('node', [
+      cliPath, 'build',
+      '--source', path.join(tmpDir, 'input'),
+      '--output', path.join(tmpDir, 'output'),
+      '--domain', 'https://test.com'
+    ], { timeout: 30000 });
 
     const outputDir = path.join(tmpDir, 'output', 'public');
     server = createServer((req, res) => {
@@ -143,7 +141,10 @@ describe('Reactivity: Dashboard (multi-block + computed chains)', () => {
     await page.selectOption('select[data-ignition-binding="ui.period"]', 'month');
 
     // Should still show all items (our test data is small)
-    await page.waitForTimeout(500);
+    await page.waitForFunction(() => {
+      const items = document.querySelectorAll('[data-ignition-block="dashboard/sales-list"] .sale-item');
+      return items.length === 3;
+    }, { timeout: 5000 });
     const items = await page.locator('[data-ignition-block="dashboard/sales-list"] .sale-item').count();
     expect(items).toBe(3);
 

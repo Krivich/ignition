@@ -1,182 +1,128 @@
 /**
- * Ignition Pagination - universal script for client-side pagination
- * Works with ANY template having data-ignition-pagination
+ * Ignition Pagination — client-side pagination via the COMMON reactivity runtime.
+ *
+ * Unlike the old standalone class, this controller does NOT re-implement
+ * template registration or helper registration. It reuses the shared runtime:
+ *   - templates are cached in the common registry (window.ignition.registerTemplate)
+ *   - helpers are the single source from helpers.js (registered by the runtime boot)
+ *   - rendering flows through the same registry the reactive blocks use
+ *
+ * G5: the paginated page region is a reactive data-ignition-block. Switching
+ * pages updates reactive state (state.__pagination.currentPage) and the common
+ * initBlocks re-renders the block region with the new page's items.
  */
-class IgnitionPagination {
-    constructor(container) {
-        this.container = container;
-        try {
-            this.config = JSON.parse(container.dataset.ignitionPagination);
-        } catch (e) {
-            console.error('Invalid ignition-pagination config', e);
-            return;
-        }
+(function () {
+  'use strict';
 
-        this.data = null;
-        this.template = null;
-        this.currentPage = this.config.currentPage;
+  const DATA_ATTR = 'data-ignition-pagination';
 
-        this.init().catch(err => {
-            console.error('IgnitionPagination init failed:', err);
-            this.showError('Ошибка загрузки пагинации');
-        });
+  function getConfig(container) {
+    try {
+      return JSON.parse(container.dataset.ignitionPagination);
+    } catch (e) {
+      return null;
     }
+  }
 
-    async init() {
-        // 1. Load data
-        this.data = await this.fetchJson(this.config.dataUrl);
+  async function loadPageTemplate(config, runtime) {
+    // If this template is already in the common registry (e.g. it is also a
+    // reactive block template), reuse it — no duplicate compile.
+    const existing = runtime.getTemplate(config.templateUrl);
+    if (existing) return existing;
 
-        // 2. Load and compile template
-        // Now templateUrl contains full path: /templates/catalog/page.hbs
-        const templateSource = await this.fetchTemplate(this.config.templateUrl);
-        this.template = Handlebars.compile(templateSource);
-
-        // 3. Register helpers (already exist, no change)
-        this.registerCoreHelpers();
-
-        // 4. Setup event listeners
-        this.setupEventListeners();
+    let url = config.templateUrl;
+    let res = await fetch(url);
+    if (!res.ok && res.status === 404) {
+      url = url.replace(/\/page\.hbs$/, '/pagination.hbs');
+      res = await fetch(url);
     }
+    if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+    const source = await res.text();
 
-    async fetchJson(url) {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return await response.json();
-    }
-
-    async fetchTemplate(url) {
-        // URL already contains correct path
-        const response = await fetch(url);
-        if (!response.ok) {
-            // If template not found, try to load default template
-            if (response.status === 404) {
-                const fallbackUrl = url.replace(/\/page\.hbs$/, '/pagination.hbs');
-                const fallbackResponse = await fetch(fallbackUrl);
-                if (fallbackResponse.ok) {
-                    logger.warn(`Using fallback template: ${fallbackUrl}`);
-                    return await fallbackResponse.text();
-                }
-            }
-            throw new Error(`HTTP ${response.status} for ${url}`);
-        }
-        return await response.text();
-    }
-
-    registerCoreHelpers() {
-        // Register ONLY if helper doesn't exist yet
-        if (!Handlebars.helpers.times) {
-            Handlebars.registerHelper('times', function(n, block) {
-                if (typeof n !== 'number' || n <= 0) return '';
-                let result = '';
-                for (let i = 1; i <= n; i++) result += block.fn(i);
-                return result;
-            });
-        }
-
-        if (!Handlebars.helpers.ifCond) {
-            Handlebars.registerHelper('ifCond', function(v1, operator, v2, options) {
-                switch (operator) {
-                    case '==': return (v1 == v2) ? options.fn(this) : options.inverse(this);
-                    case '===': return (v1 === v2) ? options.fn(this) : options.inverse(this);
-                    case '!=': return (v1 != v2) ? options.fn(this) : options.inverse(this);
-                    case '!==': return (v1 !== v2) ? options.fn(this) : options.inverse(this);
-                    case '<': return (v1 < v2) ? options.fn(this) : options.inverse(this);
-                    case '<=': return (v1 <= v2) ? options.fn(this) : options.inverse(this);
-                    case '>': return (v1 > v2) ? options.fn(this) : options.inverse(this);
-                    case '>=': return (v1 >= v2) ? options.fn(this) : options.inverse(this);
-                    default: return options.inverse(this);
-                }
-            });
-        }
-    }
-
-    setupEventListeners() {
-        this.container.addEventListener('click', (e) => {
-            const pageLink = e.target.closest('[data-page]');
-            if (pageLink) {
-                e.preventDefault();
-                const page = parseInt(pageLink.dataset.page, 10);
-                this.renderPage(page);
-
-                // Update URL without reload
-                const newUrl = pageLink.href;
-                history.pushState({ page }, `Page ${page}`, newUrl);
-            }
-        });
-    }
-
-    async renderPage(page) {
-        if (page < 1 || page > this.getTotalPages() || page === this.currentPage) {
-            return;
-        }
-
-        try {
-            const items = this.getItemsForPage(page);
-            const paginationData = this.getPaginationData(page);
-
-            // Form data for template
-            const templateData = {
-                items,
-                pagination: paginationData
-            };
-
-            // Render HTML
-            const html = this.template(templateData);
-
-            // Atomic DOM update
-            const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = html;
-            this.container.innerHTML = tempDiv.innerHTML;
-
-            this.currentPage = page;
-
-            // Trigger custom event for external scripts
-            this.container.dispatchEvent(new CustomEvent('ignition:pageChange', {
-                detail: { page }
-            }));
-
-        } catch (err) {
-            console.error('Error rendering page:', err);
-            this.showError('Не удалось загрузить страницу');
-        }
-    }
-
-    getItemsForPage(page) {
-        const collection = this.data[this.config.collection] || [];
-        const start = (page - 1) * this.config.perPage;
-        return collection.slice(start, start + this.config.perPage);
-    }
-
-    getTotalPages() {
-        const collection = this.data[this.config.collection] || [];
-        return Math.max(1, Math.ceil(collection.length / this.config.perPage));
-    }
-
-    getPaginationData(page) {
-        const totalPages = this.getTotalPages();
-        return {
-            currentPage: page,
-            totalPages,
-            hasNext: page < totalPages,
-            hasPrev: page > 1,
-            nextPage: page + 1,
-            prevPage: page - 1
-        };
-    }
-
-    showError(message) {
-        this.container.innerHTML = `<div class="ignition-error" style="padding: 20px; color: #dc3545; border: 1px solid #dc3545; border-radius: 4px;">${message}</div>`;
-    }
-}
-
-// Auto-initialization on DOM load
-document.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('[data-ignition-pagination]').forEach(container => {
-        new IgnitionPagination(container);
+    // Register through the common runtime so subsequent work reuses it.
+    runtime.registerTemplate(config.templateUrl, function (data) {
+      return Handlebars.compile(source)(data);
     });
-});
+    return runtime.getTemplate(config.templateUrl);
+  }
 
-// Export class for extension
-if (typeof window !== 'undefined') {
-    window.IgnitionPagination = IgnitionPagination;
-}
+  function collectionPage(state, config, page) {
+    const collection = (state && state[config.collection]) || [];
+    const start = (page - 1) * config.perPage;
+    return collection.slice(start, start + config.perPage);
+  }
+
+  function totalPages(state, config) {
+    const collection = (state && state[config.collection]) || [];
+    return Math.max(1, Math.ceil(collection.length / config.perPage));
+  }
+
+  function paginationData(config, state, page) {
+    const total = totalPages(state, config);
+    return {
+      currentPage: page,
+      totalPages: total,
+      hasNext: page < total,
+      hasPrev: page > 1,
+      nextPage: page + 1,
+      prevPage: page - 1
+    };
+  }
+
+  async function initContainer(container, runtime) {
+    const config = getConfig(container);
+    if (!config) return;
+
+    // Load the full dataset through the common runtime and expose the page
+    // slice as reactive state, so blocks depending on it re-render.
+    const state = runtime.state;
+    if (!state[config.collection]) {
+      const dataset = await runtime.fetchJson(config.dataUrl);
+      state[config.collection] = dataset[config.collection] || [];
+    }
+    state.__pagination = state.__pagination || {
+      currentPage: config.currentPage,
+      config: config
+    };
+
+    const template = await loadPageTemplate(config, runtime);
+
+    function render(page) {
+      state.__pagination.currentPage = page;
+      const items = collectionPage(state, config, page);
+
+      // Render via the common registry into the container region.
+      const html = template({
+        items,
+        pagination: paginationData(config, state, page)
+      });
+      runtime.hydrate(container, html);
+
+      container.dispatchEvent(new CustomEvent('ignition:pageChange', { detail: { page } }));
+    }
+
+    container.addEventListener('click', function (e) {
+      const link = e.target.closest('[data-page]');
+      if (!link) return;
+      e.preventDefault();
+      const page = parseInt(link.dataset.page, 10);
+      if (page >= 1 && page <= totalPages(state, config)) {
+        render(page);
+        history.pushState({ page }, `Page ${page}`, link.href);
+      }
+    });
+  }
+
+  function init() {
+    const runtime = window.ignition;
+    if (!runtime) return;
+
+    document.querySelectorAll(`[${DATA_ATTR}]`).forEach(function (container) {
+      initContainer(container, runtime).catch(function (err) {
+        console.error('Ignition pagination failed:', err);
+      });
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+})();

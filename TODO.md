@@ -2,12 +2,16 @@
 
 Tasks and ideas for Ignition development. Divided into what should be **in the core** and what should be **in external services**.
 
+> Recent redesign (2026-08-27): `{{#block}}` SSR with compact manifest, single-source helpers (`helpers.js`),
+> generated IIFE bundle (`scripts/build-runtime.js`), pagination consolidated onto the common runtime,
+> and the extmob demo removed in favor of a clean `demo.hbs` example.
+
 ---
 
 ## Phase 1: Polish and Stabilization
 
 - [ ] Split package into `@kartotech/ignition` (engine) and demo app (catalog, landing)
-- [ ] Add tests (at least integration tests for rendering and pagination)
+- [x] Add tests (265 tests across 27 files: vitest + jsdom + playwright)
 - [ ] Add ESLint + Prettier
 - [ ] CI/CD: GitHub Actions for linting and npm publishing
 - [ ] Fix first page: currently `1.html`, by convention should be `index.html`

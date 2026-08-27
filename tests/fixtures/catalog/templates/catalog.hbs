@@ -11,6 +11,45 @@
     <script>
         window.__IGNITION_INITIAL_DATA__ = {{{initialData}}};
     </script>
+    <script>
+    window.__IGNITION_PAGE_CONFIG__ = function(state, api) {
+        function filterProducts(s) {
+            var items = s.products.items;
+            if (s.ui.activeCategory !== 'all') {
+                items = items.filter(function(p) { return p.category === s.ui.activeCategory; });
+            }
+            if (s.ui.searchQuery) {
+                var q = s.ui.searchQuery.toLowerCase();
+                items = items.filter(function(p) { return p.name.toLowerCase().indexOf(q) !== -1; });
+            }
+            return { items: items };
+        }
+
+        state.filteredProducts = filterProducts(state);
+        state.subscribe('*', function() {
+            state.filteredProducts = filterProducts(state);
+        });
+
+        api.blockOptions.renderers['catalog/product-list'] = function(s) {
+            return s.filteredProducts;
+        };
+
+        api.action('cartAdd', function(s, id, price, name) {
+            s.cart.items.push({ id: id, price: price, name: name });
+        });
+        api.action('cartRemove', function(s, id) {
+            for (var i = 0; i < s.cart.items.length; i++) {
+                if (s.cart.items[i].id === id) {
+                    s.cart.items.splice(i, 1);
+                    break;
+                }
+            }
+        });
+        api.blockOptions.renderers['catalog/cart-header'] = function(s) { return s.cart; };
+        api.blockOptions.renderers['catalog/cart-details'] = function(s) { return s.cart; };
+        api.blockOptions.sourceDeps['catalog/product-list'] = ['products', 'ui'];
+    };
+    </script>
 
     <style>
         body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
@@ -57,7 +96,8 @@
 
     {{!-- ГРАБЛЬ #4: #each с push/pop --}}
     <div data-ignition-block="catalog/cart-details"
-         data-ignition-depends="cart">
+         data-ignition-depends="cart"
+         class="cart-details">
     </div>
 
 </body>

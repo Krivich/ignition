@@ -111,6 +111,25 @@ describe('G. Pagination', () => {
   });
 
   describe('G5: Pagination via common reactivity mechanism', () => {
+    it('pagination client script integrates with the common runtime, no duplicated helpers', () => {
+      const jsPath = path.join(process.cwd(), 'engine', 'core', 'assets', 'ignition-pagination.js');
+      const src = fs.readFileSync(jsPath, 'utf8');
+
+      // Reuses the common runtime rather than a bespoke class
+      expect(src).toContain('window.ignition');
+      expect(src).toContain('runtime.registerTemplate');
+      expect(src).toContain('runtime.fetchJson');
+      expect(src).toContain('runtime.hydrate');
+
+      // No longer re-implements helper registration (single source from helpers.js)
+      expect(src).not.toContain("registerHelper('times'");
+      expect(src).not.toContain('Register ONLY if helper');
+
+      // Exposes the page slice as reactive state (state[collection] + currentPage)
+      expect(src).toContain('state[config.collection]');
+      expect(src).toContain('__pagination');
+    });
+
     it('pagination data is in output/data/ as external JSON', () => {
       const dataPath = path.join(OUTPUT_PUBLIC, 'data', 'catalog', 'books.json');
       expect(fs.existsSync(dataPath)).toBe(true);

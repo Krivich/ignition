@@ -347,4 +347,66 @@ describe('ignition — привязки и обработчики', () => {
       expect(afterHydrate).toHaveBeenCalledTimes(callCount + 1);
     });
   });
+
+  describe('data-ignition-data — декларативный срез данных (A5)', () => {
+    let state;
+
+    beforeEach(() => {
+      state = createReactiveState({
+        greeting: 'Привет',
+        products: [
+          { name: 'Ноутбук' },
+          { name: 'Мышь' }
+        ],
+        footer: { copyright: '2026' }
+      });
+    });
+
+    it('рендерит блок со СРЕЗОМ данных по пути, а не с целым state', () => {
+      registerTemplate('ssr/product-list', (data) => {
+        return data.map(p => `<p>${p.name}</p>`).join('');
+      });
+      document.body.innerHTML = `
+        <div data-ignition-block="ssr/product-list"
+             data-ignition-data="products"
+             data-ignition-depends="products">
+        </div>
+      `;
+      initBlocks(state);
+      const block = document.querySelector('[data-ignition-block]');
+      expect(block.innerHTML).toContain('Ноутбук');
+      expect(block.innerHTML).toContain('Мышь');
+    });
+
+    it('без data-ignition-data блок получает целый state', () => {
+      registerTemplate('ssr/footer', (data) => {
+        return `<p>${data.footer.copyright}</p>`;
+      });
+      document.body.innerHTML = `
+        <div data-ignition-block="ssr/footer"
+             data-ignition-depends="footer">
+        </div>
+      `;
+      initBlocks(state);
+      const block = document.querySelector('[data-ignition-block]');
+      expect(block.innerHTML).toContain('2026');
+    });
+
+    it('перерендеряет при изменении среза (depends = data-ignition-data)', () => {
+      registerTemplate('ssr/product-list', (data) => {
+        return data.map(p => `<p>${p.name}</p>`).join('');
+      });
+      document.body.innerHTML = `
+        <div data-ignition-block="ssr/product-list"
+             data-ignition-data="products"
+             data-ignition-depends="products">
+        </div>
+      `;
+      initBlocks(state);
+      const block = document.querySelector('[data-ignition-block]');
+      state.products = [{ name: 'Клавиатура' }];
+      expect(block.innerHTML).toContain('Клавиатура');
+      expect(block.innerHTML).not.toContain('Ноутбук');
+    });
+  });
 });

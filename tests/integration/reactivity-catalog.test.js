@@ -52,16 +52,12 @@ describe('Reactivity: Catalog (search + cart)', () => {
     }
 
     // 2. Build
-    try {
-      await execFileAsync('node', [
-        cliPath, 'build',
-        '--source', path.join(tmpDir, 'input'),
-        '--output', path.join(tmpDir, 'output'),
-        '--domain', 'https://test.com'
-      ], { timeout: 30000 });
-    } catch {
-      // Build may fail without runtime — expected at this stage
-    }
+    await execFileAsync('node', [
+      cliPath, 'build',
+      '--source', path.join(tmpDir, 'input'),
+      '--output', path.join(tmpDir, 'output'),
+      '--domain', 'https://test.com'
+    ], { timeout: 30000 });
 
     // 3. Start HTTP server
     const outputDir = path.join(tmpDir, 'output', 'public');
