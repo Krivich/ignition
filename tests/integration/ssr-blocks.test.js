@@ -281,4 +281,41 @@ describe('A+B: Server-side block rendering + compact manifest (real engine)', ()
     expect(initialData.products).toEqual([{ name: 'Товар А' }]);
     expect(initialData.unused).toBeUndefined();
   });
+
+  it('A7: injects preload link for the full dataset on reactive pages', async () => {
+    await scaffold();
+
+    const templatePath = path.join(config.source.templates, 'ssr.hbs');
+    const data = {
+      title: 'Каталог',
+      products: [{ name: 'Товар А' }],
+      unused: { big: [1, 2, 3, 4, 5] },
+      layout: 'ssr',
+      dataset: 'main',
+    };
+    const outputDir = path.join(config.output.html, 'ssr');
+
+    await renderTemplate(templatePath, data, outputDir, 'main', 'ssr');
+    const html = await fs.readFile(path.join(outputDir, 'main.html'), 'utf8');
+
+    expect(html).toContain('<link rel="preload" href="/data/ssr/main.json" as="fetch" crossorigin="anonymous">');
+    const headClose = html.indexOf('</head>');
+    const linkPos = html.indexOf('rel="preload"');
+    expect(linkPos).toBeLessThan(headClose);
+  });
+
+  it('A8: does not inject preload on pages without ignition attributes', async () => {
+    const templatesDir = config.source.templates;
+    await fs.mkdir(templatesDir, { recursive: true });
+    const layout = `<!DOCTYPE html>
+<html><head><title>{{title}}</title></head><body><p>{{title}}</p></body></html>`;
+    await fs.writeFile(path.join(templatesDir, 'plain.hbs'), layout);
+
+    const data = { title: 'Plain', layout: 'plain', dataset: 'main' };
+    const outputDir = path.join(config.output.html, 'plain');
+    await renderTemplate(path.join(templatesDir, 'plain.hbs'), data, outputDir, 'main', 'plain');
+    const html = await fs.readFile(path.join(outputDir, 'main.html'), 'utf8');
+
+    expect(html).not.toContain('rel="preload"');
+  });
 });

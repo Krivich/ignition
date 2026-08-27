@@ -73,6 +73,16 @@ If a pure block page still needs a path that is not referenced in any attribute 
 
 `__IGNITION_MANIFEST__` is kept only for `loadDataset()` — it records which slices the server actually rendered, so the client can diff a freshly loaded dataset and re-render only changed blocks.
 
+### Preloading the Full Dataset
+
+For reactive pages the build automatically injects a non-blocking preload link into `<head>`:
+
+```html
+<link rel="preload" href="/data/{layout}/{dataset}.json" as="fetch" crossorigin="anonymous">
+```
+
+This starts downloading the full dataset immediately, in parallel with rendering. It does not block `load` or LCP, so Googlebot still sees a complete, fast page. By the time the user finishes reading and clicks a button, the JSON is already cached or nearly complete.
+
 ## Boot Sequence
 
 When the page loads, `ignition-runtime.js` runs this sequence:

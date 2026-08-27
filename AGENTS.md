@@ -70,6 +70,8 @@ Templates always inject:
 
 `__IGNITION_MANIFEST__` is still generated, but only for `loadDataset()` to diff personalized datasets.
 
+For reactive pages the build also injects a non-blocking preload link for the full dataset JSON, so the browser starts fetching it in parallel without delaying the page load event.
+
 The output block carries the declarative attributes the client runtime consumes:
 
 ```html

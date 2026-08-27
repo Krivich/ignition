@@ -352,6 +352,16 @@ The build step analyzes the rendered HTML and decides what goes into `initialDat
 
 `__IGNITION_MANIFEST__` is still generated, but only for `loadDataset()` to diff personalized datasets against what the server rendered.
 
+### Preloading the Full Dataset
+
+For reactive pages the build injects a non-blocking preload link into `<head>`:
+
+```html
+<link rel="preload" href="/data/{layout}/{dataset}.json" as="fetch" crossorigin="anonymous">
+```
+
+The browser starts downloading the full JSON immediately while rendering the page. It does not delay the `load` event or LCP, so search engines score the page as fast. By the time the user interacts, the data is already available.
+
 ### Key Features
 
 - **Reactive state** — deep Proxy with path-based subscriptions

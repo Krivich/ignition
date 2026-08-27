@@ -21,6 +21,23 @@ import config from '../config/default.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+function hasIgnitionAttributes(html) {
+  return /data-ignition-(block|data|depends|binding|on|class|attr-)/.test(html);
+}
+
+function buildDataUrl(layout, dataset) {
+  return `/data/${layout}/${dataset}.json`;
+}
+
+function injectDataPreload(html, layout, dataset) {
+  if (!hasIgnitionAttributes(html)) return html;
+  const dataUrl = buildDataUrl(layout, dataset);
+  const link = `<link rel="preload" href="${dataUrl}" as="fetch" crossorigin="anonymous">`;
+  const headClose = html.indexOf('</head>');
+  if (headClose === -1) return link + html;
+  return html.slice(0, headClose) + link + html.slice(headClose);
+}
+
 // Initialize Handlebars
 await registerCorePartials();
 registerHelpers();
@@ -60,9 +77,10 @@ export async function renderTemplate(templatePath, data, outputDir, dataset, lay
             });
             const renderedManifest = JSON.stringify(getManifest());
             const derivedInitialData = JSON.stringify(deriveInitialState(html, pureData));
-            const finalHtml = html
+            let finalHtml = html
                 .split('IGNITION_INITIAL_DATA_PLACEHOLDER__').join(derivedInitialData)
                 .split('IGNITION_MANIFEST_PLACEHOLDER__').join(renderedManifest);
+            finalHtml = injectDataPreload(finalHtml, layout, dataset);
             const outputPath = path.join(outputDir, `${dataset}.html`);
             await safeMkdir(path.dirname(outputPath));
             await atomicWrite(outputPath, finalHtml);
@@ -161,7 +179,7 @@ async function handlePagination(config, template, data, outputDir, dataset, layo
         const html = template(pageData);
         const pagePath = path.join(outputDir, dataset, 'page', `${page.pageNumber}.html`);
         await safeMkdir(path.dirname(pagePath));
-        await atomicWrite(pagePath, html);
+        await atomicWrite(pagePath, injectDataPreload(html, layout, dataset));
     }
 }
 
