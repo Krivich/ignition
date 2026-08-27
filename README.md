@@ -8,20 +8,61 @@ Hybrid SSR/CSR: pre-rendered pages with client-side interactivity.
 
 ---
 
-## Philosophy
+## Philosophy and Principles
 
-**"Write, debug, and forget"**
+Ignition is a **dumb renderer**. It takes JSON and Handlebars templates and produces HTML. There is no business logic, styles, or API inside the engine — all intelligence lives outside, in the data, templates, and the external controller that prepares the JSON.
 
-Ignition is not a framework. It is a **"dumb renderer"** that does one thing and does it well:
+**"Write, debug, and forget."** A site built with Ignition does not require constant care: dependencies do not rot, hosting costs pennies, and you only come back when you want to change content or design.
 
-- Takes JSON + Handlebars templates
-- Generates HTML with SSR/CSR
-- Provides atomic updates
-- Contains no business logic
+### SSR is the foundation
 
-All business logic lives in the **external controller** (a script that prepares JSON and runs the build). Ignition only handles rendering.
+Server-side rendering is not a mode — it is the default. At build time the engine renders 100% of the content. The HTML that reaches the browser is already complete: users and search engines see the same thing. The page is readable, indexable, and works without JavaScript.
 
-**Key principle:** Technologies should serve the design and business goals, not the other way around.
+### CSR is enhancement, not replacement
+
+Client-side JavaScript does not render the page from scratch. It attaches to the already rendered HTML and adds interactivity: pagination without reload, filters, sorts, forms. If JavaScript fails to load, the user still sees the content and follows regular links.
+
+### Data drives the UI
+
+The client keeps a copy of the model, and a change to the model is the only reason to re-render. The runtime finds blocks that depend on the changed branch and re-renders only those — with the same templates the server used. The developer does not touch the DOM: write data, the UI follows. States like "loading" and "error" live next to the data they describe, not in a global object.
+
+### One language for server and client
+
+Templates and helpers are identical on both sides. There are no "server" and "client" templates, no second DOM-building mechanism. The client differs from the server in only one way: it watches for data changes and patches the interface minimally. Anything that creates asymmetry between the two sides is evil.
+
+### JSON is the single source of truth
+
+The engine does not care what it renders — catalog, landing, form, or reference book. What matters is the data structure. One layout works with any number of datasets; one dataset can be rendered by different layouts.
+
+### Dumb engine, smart controller
+
+API integration, translations, business rules — that is the external controller's job, a script in any language that drops ready JSON into the input folder. The engine watches the folder and re-renders what changed. That is why Ignition can stay stable for years while the outside world changes.
+
+### Declarative, not magic
+
+Links are explicit: which template renders a block, which data it depends on, what happens on click. Where the engine guesses (defaults, conventions), it does so predictably and allows override. Hidden transformations are the source of mysterious bugs; explicitness is the source of trust.
+
+### Lightweight pages and partial pre-rendering
+
+The page does not carry the whole dataset: the server renders it with the slice it needs (the first catalog page), while full data loads in the background. When the data arrives, the client re-renders only the differences from the pre-rendered state. This also gives personalization for free: the server renders the default state, the client adds session data.
+
+### SEO by default
+
+Every page is ready HTML, pagination is separate files per page, sitemap and robots.txt are generated automatically. Interactivity is layered on top and never blocks indexing. SEO is not bolted on later — it is built into the architecture.
+
+### Low cost
+
+The output is pure static files. Hosting is any web server for pocket change. No Node server in production, no compute bill. Updating content means dropping a new JSON file, not redeploying an application.
+
+### Low barrier to entry
+
+You do not need React or Vue to build a site — JSON and Handlebars are enough to learn in an evening. For those who do not want to write JSON by hand, editors can live on top: a person fills forms, JSON is created behind the scenes. The engine is for the developer; the product on top of the engine is for the human.
+
+### Cheap mistakes
+
+Ignition does not guarantee you will never make a mistake — it makes mistakes cheap. A bad template or dataset is fixed in minutes and does not accumulate technical debt. A site can be rebuilt from scratch in an evening, and that freedom to experiment is worth more than any guarantee.
+
+These principles are the measure of every change. If a feature contradicts them, the feature is reconsidered, not the principles.
 
 ---
 
