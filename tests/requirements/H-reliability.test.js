@@ -33,9 +33,9 @@ describe('H. Reliability and compatibility', () => {
       expect(blockMatch).not.toBeNull();
       expect(blockMatch.length).toBeGreaterThan(0);
 
-      // And the product content is actually inside the block
-      expect(html).toContain('class="product"');
-      expect(html).toContain('Ноутбук');
+      // And the skill content is actually inside the block
+      expect(html).toContain('class="skill-row"');
+      expect(html).toContain('java');
     });
 
     it('reactive blocks contain data when dataset provides it', () => {

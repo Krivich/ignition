@@ -17,6 +17,7 @@ import {
 import { paginateCollection, preparePageData } from './pagination.js';
 import { resetManifest, getManifest } from './helpers.js';
 import { deriveInitialState } from '../utils/deriveInitialState.js';
+import { analyzeTemplate } from './compiler.js';
 import config from '../config/default.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -38,6 +39,39 @@ function injectDataPreload(html, layout, dataset) {
   return html.slice(0, headClose) + link + html.slice(headClose);
 }
 
+/**
+ * Wrap partial content with reflection attributes for auto-blocks.
+ * 
+ * @param {string} content - Partial template content
+ * @param {string} blockName - Block name (layout/partial)
+ * @param {string} dataPath - Data path for the block
+ * @param {string} depends - Dependencies for the block
+ * @returns {string} - Wrapped template content
+ */
+function wrapPartialWithReflection(content, blockName, dataPath, depends) {
+  // Use the existing {{#block}} helper to wrap the partial
+  // This ensures consistency with explicit blocks
+  return `{{#block name="${blockName}" data="${dataPath}" depends="${depends}"}}${content}{{/block}}`;
+}
+
+/**
+ * Inject reflection attributes for auto-blocks based on compiler analysis.
+ * 
+ * @param {string} html - Rendered HTML
+ * @param {object} analysis - Compiler analysis result
+ * @param {string} layout - Layout name
+ * @returns {string} - HTML with injected attributes
+ */
+function injectReflection(html, analysis, layout) {
+  if (analysis.hasNoblock || analysis.partials.length === 0) {
+    return html;
+  }
+  
+  // Reflection attributes are already injected via wrapPartialWithReflection
+  // This function is now a no-op, but kept for future post-processing if needed
+  return html;
+}
+
 // Initialize Handlebars
 await registerCorePartials();
 registerHelpers();
@@ -47,16 +81,19 @@ export async function renderTemplate(templatePath, data, outputDir, dataset, lay
         // 1. Read template
         const templateContent = await fs.readFile(templatePath, 'utf8');
 
-        // 2. Detect pagination
+        // 2. Analyze template for v2 reflection
+        const analysis = analyzeTemplate(templateContent);
+        
+        // 3. Detect pagination
         const paginationConfig = detectPaginationInTemplate(templateContent);
 
-        // 3. Read and register ALL partials from templates
-        await registerAllTemplatePartials(config.source.templates);
+        // 4. Read and register ALL partials from templates
+        await registerAllTemplatePartials(config.source.templates, analysis);
 
-        // 4. Compile template
+        // 5. Compile template
         const template = Handlebars.compile(templateContent);
 
-        // 5. Process pagination
+        // 6. Process pagination
         if (paginationConfig.enabled) {
             await handlePagination(
                 paginationConfig,
@@ -75,9 +112,17 @@ export async function renderTemplate(templatePath, data, outputDir, dataset, lay
                 initialData: 'IGNITION_INITIAL_DATA_PLACEHOLDER__',
                 manifest: 'IGNITION_MANIFEST_PLACEHOLDER__'
             });
+            
+            // Inject reflection attributes for auto-blocks
+            let finalHtml = injectReflection(html, analysis, layout);
+            
             const renderedManifest = JSON.stringify(getManifest());
-            const derivedInitialData = JSON.stringify(deriveInitialState(html, pureData));
-            let finalHtml = html
+            const derivedInitialData = JSON.stringify(deriveInitialState(finalHtml, pureData, analysis))
+                .replace(/</g, '\\u003c')
+                .replace(/>/g, '\\u003e')
+                .replace(/&/g, '\\u0026')
+                .replace(/'/g, '\\u0027');
+            finalHtml = finalHtml
                 .split('IGNITION_INITIAL_DATA_PLACEHOLDER__').join(derivedInitialData)
                 .split('IGNITION_MANIFEST_PLACEHOLDER__').join(renderedManifest);
             finalHtml = injectDataPreload(finalHtml, layout, dataset);
@@ -87,7 +132,7 @@ export async function renderTemplate(templatePath, data, outputDir, dataset, lay
             logger.info(`✅ Rendered single page: ${dataset}.html`);
         }
 
-        // 6. Copy CSR template (if exists)
+        // 7. Copy CSR template (if exists)
         if (paginationConfig.enabled) {
             await copyCsrTemplate(layout, paginationConfig.template);
         }
@@ -102,7 +147,7 @@ export async function renderTemplate(templatePath, data, outputDir, dataset, lay
     }
 }
 
-async function registerAllTemplatePartials(templatesDir) {
+async function registerAllTemplatePartials(templatesDir, analysis = null) {
     try {
         const templateDirs = await fs.readdir(templatesDir, { withFileTypes: true });
 
@@ -114,9 +159,26 @@ async function registerAllTemplatePartials(templatesDir) {
                 for (const file of files) {
                     if (file.isFile() && file.name.endsWith('.hbs')) {
                         const partialName = path.basename(file.name, '.hbs');
+                        const fullName = `${dir.name}/${partialName}`;
                         const content = await fs.readFile(path.join(partialsDir, file.name), 'utf8');
-                        Handlebars.registerPartial(`${dir.name}/${partialName}`, content);
-                        logger.debug(`✅ Registered partial: ${dir.name}/${partialName}`);
+                        
+                        // Check if this partial should be auto-wrapped
+                        const partialAnalysis = analysis?.partials?.find(p => p.partialName === fullName);
+                        
+                        if (partialAnalysis && !analysis.hasNoblock) {
+                            // Wrap partial with reflection attributes
+                            const wrappedContent = wrapPartialWithReflection(
+                                content, 
+                                fullName, 
+                                partialAnalysis.dataPath, 
+                                partialAnalysis.depends
+                            );
+                            Handlebars.registerPartial(fullName, wrappedContent);
+                            logger.debug(`✅ Registered auto-block partial: ${fullName}`);
+                        } else {
+                            Handlebars.registerPartial(fullName, content);
+                            logger.debug(`✅ Registered partial: ${fullName}`);
+                        }
                     }
                 }
             }

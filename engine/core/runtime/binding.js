@@ -6,6 +6,8 @@ const boundElements = new WeakSet();
 const classBoundElements = new WeakSet();
 const attrBoundElements = new WeakSet();
 const handledElements = new WeakSet();
+const textBoundElements = new WeakSet();
+const autoBoundElements = new WeakSet();
 
 export function resetActions() {
   actionRegistry.clear();
@@ -57,6 +59,8 @@ export function initBinding(state, element) {
   initFormBinding(state, element);
   initClassBinding(state, element);
   initAttrBinding(state, element);
+  initTextBinding(state, element);
+  initAutoBinding(state, element);
 }
 
 function initFormBinding(state, element) {
@@ -152,6 +156,80 @@ function initAttrBinding(state, element) {
   sync();
 }
 
+function initTextBinding(state, element) {
+  const path = element.getAttribute('data-ignition-text');
+  if (!path) return;
+  if (textBoundElements.has(element)) return;
+  textBoundElements.add(element);
+
+  const sync = () => {
+    const val = getByPath(state, path);
+    element.textContent = val ?? '';
+  };
+
+  state.subscribe(path, sync);
+  sync();
+}
+
+function initAutoBinding(state, element) {
+  const tag = element.tagName.toLowerCase();
+  if (tag !== 'input' && tag !== 'textarea') return;
+  if (autoBoundElements.has(element)) return;
+
+  // Check for value="{{path}}" or checked="{{path}}"
+  const valueAttr = element.getAttribute('value');
+  const checkedAttr = element.getAttribute('checked');
+  
+  let path = null;
+  let type = null;
+
+  if (valueAttr && valueAttr.startsWith('{{') && valueAttr.endsWith('}}')) {
+    path = valueAttr.slice(2, -2).trim();
+    type = 'value';
+  } else if (checkedAttr && checkedAttr.startsWith('{{') && checkedAttr.endsWith('}}')) {
+    path = checkedAttr.slice(2, -2).trim();
+    type = 'checked';
+  }
+
+  if (!path) return;
+  
+  autoBoundElements.add(element);
+
+  // Set data-ignition-path for testing
+  element.setAttribute('data-ignition-path', path);
+
+  const isCheckbox = element.type === 'checkbox';
+  const eventType = isCheckbox ? 'change' : 'input';
+
+  // Two-way binding: element -> state
+  element.addEventListener(eventType, () => {
+    const val = isCheckbox ? element.checked : element.value;
+    setByPath(state, path, val);
+  });
+
+  // Two-way binding: state -> element
+  state.subscribe(path, () => {
+    const val = getByPath(state, path);
+    if (isCheckbox) {
+      const bool = !!val;
+      if (element.checked !== bool) element.checked = bool;
+    } else {
+      const str = val ?? '';
+      if (element.value !== str) element.value = str;
+    }
+  });
+
+  // Initial sync
+  const initial = getByPath(state, path);
+  if (initial !== undefined) {
+    if (isCheckbox) {
+      element.checked = !!initial;
+    } else {
+      element.value = initial ?? '';
+    }
+  }
+}
+
 export function processEventHandlers(state, element) {
   const attr = element.getAttribute('data-ignition-on');
   if (!attr) return;
@@ -179,8 +257,19 @@ export function initBlocks(state, options = {}) {
   const blocks = document.querySelectorAll('[data-ignition-block]');
   blocks.forEach(block => {
     const templateName = block.getAttribute('data-ignition-block');
+    const dataPath = block.getAttribute('data-ignition-data');
     const dependsStr = block.getAttribute('data-ignition-depends') || '';
-    const depends = dependsStr.split(',').map(s => s.trim()).filter(Boolean);
+    
+    // v2: depends defaults to data if not specified
+    let depends;
+    if (dependsStr) {
+      depends = dependsStr.split(',').map(s => s.trim()).filter(Boolean);
+    } else if (dataPath) {
+      // Auto-depend on data paths
+      depends = dataPath.split(',').map(s => s.trim()).filter(Boolean);
+    } else {
+      depends = [];
+    }
 
     const customRenderer = renderers[templateName];
     const extraDeps = sourceDeps[templateName] || [];

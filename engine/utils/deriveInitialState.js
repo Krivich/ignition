@@ -62,17 +62,27 @@ export function extractIgnitionPaths(html) {
   return paths;
 }
 
-function hasInteractiveAttributes(html) {
-  return /data-ignition-binding=|data-ignition-class=|data-ignition-attr-[\w-]+=|data-ignition-on=/.test(html);
+function hasInteractiveAttributes(html, analysis = null) {
+  // Check for v1 interactive attributes
+  if (/data-ignition-binding=|data-ignition-class=|data-ignition-attr-[\w-]+=|data-ignition-on=/.test(html)) {
+    return true;
+  }
+  
+  // Check for v2 autobindings from template analysis
+  if (analysis && analysis.autobindings && analysis.autobindings.length > 0) {
+    return true;
+  }
+  
+  return false;
 }
 
 /**
  * Build a minimal subset of fullData containing only the requested paths.
- * If the page uses interactive attributes (bindings, actions, class/attr toggles),
+ * If the page uses interactive attributes (bindings, actions, class/attr toggles) or autobindings,
  * the whole dataset is returned because custom actions/computed may read arbitrary paths.
  */
-export function deriveInitialState(html, fullData) {
-  if (hasInteractiveAttributes(html)) {
+export function deriveInitialState(html, fullData, analysis = null) {
+  if (hasInteractiveAttributes(html, analysis)) {
     return fullData;
   }
   const paths = extractIgnitionPaths(html);
