@@ -818,7 +818,7 @@ async function loadDataset(state, url) {
       }
     });
 
-    var initialData = window.__IGNITION_MANIFEST__ || window.__IGNITION_INITIAL_DATA__ || {};
+    var initialData = window.__IGNITION_INITIAL_DATA__ || window.__IGNITION_MANIFEST__ || {};
     var state = createReactiveState(initialData);
 
     var blockOptions = { renderers: {}, sourceDeps: {}, afterHydrate: null };

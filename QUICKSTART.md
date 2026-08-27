@@ -335,16 +335,22 @@ window.__IGNITION_PAGE_CONFIG__ = function(state, api) {
 </script>
 ```
 
-> **Note:** this example uses `__IGNITION_INITIAL_DATA__` because the page has bindings (`ui.query`) and actions. For a read-only content page that only needs reactive blocks, use `__IGNITION_MANIFEST__` — it is a compact, block-keyed subset of the dataset and produces a lighter first render.
+> **Note:** always use `__IGNITION_INITIAL_DATA__`. The framework derives the payload automatically: a compact subset for pure block pages, the full dataset for interactive pages with bindings or actions.
 
-### `__IGNITION_MANIFEST__` vs `__IGNITION_INITIAL_DATA__`
+### `__IGNITION_INITIAL_DATA__`
 
-| Variable | Use for | Payload |
-|---|---|---|
-| `__IGNITION_MANIFEST__` | Read-only pages: catalogs, articles, landing blocks | Only the slices used by blocks (small, SEO-friendly) |
-| `__IGNITION_INITIAL_DATA__` | Interactive pages: forms, filters, dashboards | Full dataset — everything bindings/actions need |
+Inject state through one variable only:
 
-If your page uses `data-ignition-binding` or reads state paths outside block slices, use `__IGNITION_INITIAL_DATA__`. If it only renders blocks, use `__IGNITION_MANIFEST__`.
+```handlebars
+<script>window.__IGNITION_INITIAL_DATA__ = {{{initialData}}};</script>
+```
+
+The build step analyzes the rendered HTML and decides what goes into `initialData`:
+
+- **Pure block pages** (only `data-ignition-block`, `data-ignition-data`, `data-ignition-depends`) get only the used slices — light and SEO-friendly.
+- **Interactive pages** (with `data-ignition-binding`, `data-ignition-on`, `data-ignition-class` or `data-ignition-attr-*`) get the full dataset, because custom actions and computed values may read any branch.
+
+`__IGNITION_MANIFEST__` is still generated, but only for `loadDataset()` to diff personalized datasets against what the server rendered.
 
 ### Key Features
 
@@ -629,7 +635,7 @@ For reactive pages (with blocks, bindings, actions):
 <script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js"></script>
 <script src="/assets/ignition-runtime.js"></script>
 <script src="/assets/templates.js"></script>
-<script>window.__IGNITION_MANIFEST__ = {{{manifest}}};</script>
+<script>window.__IGNITION_INITIAL_DATA__ = {{{initialData}}};</script>
 ```
 
 For pages with client-side pagination only:
@@ -766,7 +772,7 @@ Commit JSON → pipeline → `ignition build` → HTML → hosting serves it. CS
    - Add `{{> ignition/pagination ...}}` to the layout
    - Create `input/templates/{layout}/page.hbs` — single page partial
 4. If reactivity is needed:
-   - Include `ignition-runtime.js`, `templates.js`, and `__IGNITION_MANIFEST__` in `<head>`
+   - Include `ignition-runtime.js`, `templates.js`, and `__IGNITION_INITIAL_DATA__` in `<head>`
    - Add `{{#block name="..." data="..." depends="..."}}...{{/block}}` in the body
    - Add `window.__IGNITION_PAGE_CONFIG__` for actions, renderers, etc.
 5. Run `npm run build`

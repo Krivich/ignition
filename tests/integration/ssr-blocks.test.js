@@ -242,4 +242,43 @@ describe('A+B: Server-side block rendering + compact manifest (real engine)', ()
       categories: data.categories
     });
   });
+
+  it('A6: inline initial state is derived from ignition attributes, not the full dataset', async () => {
+    await scaffold();
+
+    const templatesDir = config.source.templates;
+    const layout = `<!DOCTYPE html>
+<html>
+<head>
+  <title>{{title}}</title>
+  <script>window.__IGNITION_INITIAL_DATA__ = {{{initialData}}};</script>
+</head>
+<body>
+  {{#block name="product-list" data="products" depends="products"}}
+     <p class="empty">Нет товаров</p>
+  {{/block}}
+</body>
+</html>`;
+    await fs.writeFile(path.join(templatesDir, 'ssr.hbs'), layout);
+
+    const templatePath = path.join(config.source.templates, 'ssr.hbs');
+    const data = {
+      title: 'Каталог',
+      products: [{ name: 'Товар А' }],
+      unused: { big: [1, 2, 3, 4, 5] },
+      layout: 'ssr',
+      dataset: 'main',
+    };
+    const outputDir = path.join(config.output.html, 'ssr');
+
+    await renderTemplate(templatePath, data, outputDir, 'main', 'ssr');
+    const html = await fs.readFile(path.join(outputDir, 'main.html'), 'utf8');
+
+    const match = html.match(/__IGNITION_INITIAL_DATA__\s*=\s*(\{[\s\S]*?\});/);
+    expect(match).not.toBeNull();
+    const initialData = JSON.parse(match[1]);
+
+    expect(initialData.products).toEqual([{ name: 'Товар А' }]);
+    expect(initialData.unused).toBeUndefined();
+  });
 });

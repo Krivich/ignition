@@ -16,6 +16,7 @@ import {
 } from './handlebars.js';
 import { paginateCollection, preparePageData } from './pagination.js';
 import { resetManifest, getManifest } from './helpers.js';
+import { deriveInitialState } from '../utils/deriveInitialState.js';
 import config from '../config/default.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -54,11 +55,14 @@ export async function renderTemplate(templatePath, data, outputDir, dataset, lay
             resetManifest();
             const html = template({
                 ...data,
-                initialData: JSON.stringify(pureData),
+                initialData: 'IGNITION_INITIAL_DATA_PLACEHOLDER__',
                 manifest: 'IGNITION_MANIFEST_PLACEHOLDER__'
             });
             const renderedManifest = JSON.stringify(getManifest());
-            const finalHtml = html.split('IGNITION_MANIFEST_PLACEHOLDER__').join(renderedManifest);
+            const derivedInitialData = JSON.stringify(deriveInitialState(html, pureData));
+            const finalHtml = html
+                .split('IGNITION_INITIAL_DATA_PLACEHOLDER__').join(derivedInitialData)
+                .split('IGNITION_MANIFEST_PLACEHOLDER__').join(renderedManifest);
             const outputPath = path.join(outputDir, `${dataset}.html`);
             await safeMkdir(path.dirname(outputPath));
             await atomicWrite(outputPath, finalHtml);

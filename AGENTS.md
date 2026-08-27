@@ -38,15 +38,15 @@ Ignition is only responsible for rendering. The watcher (chokidar) monitors `inp
 
 Ignition uses a hybrid architecture:
 
-1. **Server**: renders JSON + Handlebars → HTML with `data-ignition-block` regions **already filled** with server-rendered content (via the `{{#block}}` helper), plus a compact block-keyed manifest
+1. **Server**: renders JSON + Handlebars → HTML with `data-ignition-block` regions **already filled** with server-rendered content (via the `{{#block}}` helper), plus an automatically derived initial state
 2. **Client**: `ignition-runtime.js` attaches reactive state to existing DOM, blocks re-render on data changes
 
 ```
-Server:  JSON + Template → HTML (pre-rendered block content + compact manifest)
+Server:  JSON + Template → HTML (pre-rendered block content + derived initial state)
 Client:  HTML → Reactive State → Blocks re-render on data changes
 ```
 
-#### SSR blocks (`{{#block}}` + manifest)
+#### SSR blocks (`{{#block}}` + derived state)
 
 A reactive block is declared **declaratively in the template** with the `{{#block}}` helper, never in custom JS:
 
@@ -60,11 +60,15 @@ A reactive block is declared **declaratively in the template** with the `{{#bloc
 
 During the SSR pass the server:
 - renders the block partial (`demo/product-list.hbs`) with the requested data slice(s), filling the region in HTML;
-- records a **compact manifest** keyed by block name — only the used slices, NOT the full dataset:
+- derives and records the initial state in `__IGNITION_INITIAL_DATA__`. For pure block pages it is compact (only the used slices); for interactive pages with bindings/actions it is the full dataset.
+
+Templates always inject:
 
 ```html
-<script>window.__IGNITION_MANIFEST__ = {"demo/product-list":[{"name":"Ноутбук"},...]};</script>
+<script>window.__IGNITION_INITIAL_DATA__ = {{{initialData}}};</script>
 ```
+
+`__IGNITION_MANIFEST__` is still generated, but only for `loadDataset()` to diff personalized datasets.
 
 The output block carries the declarative attributes the client runtime consumes:
 
