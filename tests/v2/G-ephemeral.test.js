@@ -17,19 +17,12 @@ describe('G. Ephemeral и наличие', () => {
     });
   });
 
-  it('G1: ignition.ephemeral(value, ttl) — значение в модели, по ttl — null', async () => {
+  it('G1: ignition.ephemeral(path, value, ttl) — значение в модели, по ttl — null', async () => {
     vi.useFakeTimers();
 
-    // Simulate ignition.ephemeral
-    const ephemeral = (value, ttl) => {
-      const id = Symbol('ephemeral');
-      setTimeout(() => {
-        state.ui.toastMessage = null;
-      }, ttl);
-      return value;
-    };
+    window.ignition = { ephemeral: state.ephemeral.bind(state) };
 
-    state.ui.toastMessage = ephemeral('Toast message', 2600);
+    window.ignition.ephemeral('ui.toastMessage', 'Toast message', 2600);
     expect(state.ui.toastMessage).toBe('Toast message');
 
     vi.advanceTimersByTime(2600);
@@ -41,20 +34,13 @@ describe('G. Ephemeral и наличие', () => {
   it('G2: повторное присваивание сбрасывает таймер', async () => {
     vi.useFakeTimers();
 
-    let timeoutId;
-    const ephemeral = (value, ttl) => {
-      if (timeoutId) clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
-        state.ui.toastMessage = null;
-      }, ttl);
-      return value;
-    };
+    window.ignition = { ephemeral: state.ephemeral.bind(state) };
 
-    state.ui.toastMessage = ephemeral('First', 2600);
+    window.ignition.ephemeral('ui.toastMessage', 'First', 2600);
     vi.advanceTimersByTime(1000);
 
     // Reassign before ttl expires
-    state.ui.toastMessage = ephemeral('Second', 2600);
+    window.ignition.ephemeral('ui.toastMessage', 'Second', 2600);
     expect(state.ui.toastMessage).toBe('Second');
 
     vi.advanceTimersByTime(1000);
@@ -64,6 +50,25 @@ describe('G. Ephemeral и наличие', () => {
     vi.advanceTimersByTime(1600);
     // Now expired (total 2600ms)
     expect(state.ui.toastMessage).toBeNull();
+
+    vi.useRealTimers();
+  });
+
+  it('G3: постоянное присваивание отменяет pending ephemeral', async () => {
+    vi.useFakeTimers();
+
+    window.ignition = { ephemeral: state.ephemeral.bind(state) };
+
+    window.ignition.ephemeral('ui.toastMessage', 'Temporary', 2600);
+    expect(state.ui.toastMessage).toBe('Temporary');
+
+    // Permanent assignment (not via ephemeral) before ttl expires
+    state.ui.toastMessage = 'Permanent';
+    expect(state.ui.toastMessage).toBe('Permanent');
+
+    vi.advanceTimersByTime(3000);
+    // The permanent value must NOT be nullified by the stale timer
+    expect(state.ui.toastMessage).toBe('Permanent');
 
     vi.useRealTimers();
   });

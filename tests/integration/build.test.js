@@ -70,7 +70,7 @@ describe('Integration: Full build pipeline', () => {
     // Verify
     const htmlPath = path.join(outputDir, 'default.html');
     const content = await fs.readFile(htmlPath, 'utf8');
-    expect(content).toBe('<html><body><h1>Welcome</h1></body></html>');
+    expect(content).toBe('<html><body><h1 data-ignition-text="title">Welcome</h1></body></html>');
   });
 
   it('renders a paginated catalog with correct page count', async () => {

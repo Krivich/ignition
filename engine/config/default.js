@@ -6,7 +6,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export default {
     source: {
         templates: path.join(process.cwd(), 'input', 'templates'),
-        data: path.join(process.cwd(), 'input', 'data')
+        data: path.join(process.cwd(), 'input', 'data'),
+        controllers: path.join(process.cwd(), 'input', 'controllers')
     },
     output: {
         public: path.join(process.cwd(), 'output', 'public'),

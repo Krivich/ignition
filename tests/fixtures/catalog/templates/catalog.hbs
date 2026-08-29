@@ -5,52 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Тест: Живой каталог</title>
 
-    <script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js"></script>
-    <script src="/assets/ignition-runtime.js"></script>
-    <script src="/assets/templates.js"></script>
-    <script>
-        window.__IGNITION_INITIAL_DATA__ = {{{initialData}}};
-    </script>
-    <script>
-    window.__IGNITION_PAGE_CONFIG__ = function(state, api) {
-        function filterProducts(s) {
-            var items = s.products.items;
-            if (s.ui.activeCategory !== 'all') {
-                items = items.filter(function(p) { return p.category === s.ui.activeCategory; });
-            }
-            if (s.ui.searchQuery) {
-                var q = s.ui.searchQuery.toLowerCase();
-                items = items.filter(function(p) { return p.name.toLowerCase().indexOf(q) !== -1; });
-            }
-            return { items: items };
-        }
-
-        state.filteredProducts = filterProducts(state);
-        state.subscribe('*', function() {
-            state.filteredProducts = filterProducts(state);
-        });
-
-        api.blockOptions.renderers['catalog/product-list'] = function(s) {
-            return s.filteredProducts;
-        };
-
-        api.action('cartAdd', function(s, id, price, name) {
-            s.cart.items.push({ id: id, price: price, name: name });
-        });
-        api.action('cartRemove', function(s, id) {
-            for (var i = 0; i < s.cart.items.length; i++) {
-                if (s.cart.items[i].id === id) {
-                    s.cart.items.splice(i, 1);
-                    break;
-                }
-            }
-        });
-        api.blockOptions.renderers['catalog/cart-header'] = function(s) { return s.cart; };
-        api.blockOptions.renderers['catalog/cart-details'] = function(s) { return s.cart; };
-        api.blockOptions.sourceDeps['catalog/product-list'] = ['products', 'ui'];
-    };
-    </script>
-
     <style>
         body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
         .controls { display: flex; gap: 1rem; margin-bottom: 1rem; }
@@ -71,34 +25,24 @@
 
     <h1>Каталог (тест реактивности)</h1>
 
-    {{!-- ГРАБЛЬ #1: двусторонняя привязка + фильтрация --}}
     <div class="controls">
         <input type="search"
+               id="searchInput"
                placeholder="Поиск товаров..."
-               data-ignition-binding="ui.searchQuery">
+               value="{{ui.searchQuery}}">
 
-        <select data-ignition-binding="ui.activeCategory">
+        <select id="categorySelect" value="{{ui.activeCategory}}">
             <option value="all">Все категории</option>
             <option value="electronics">Электроника</option>
             <option value="books">Книги</option>
         </select>
     </div>
 
-    {{!-- ГРАБЛЬ #2: computed依赖 от трёх источников --}}
-    <div data-ignition-block="catalog/product-list"
-         data-ignition-depends="filteredProducts">
-    </div>
+    {{> catalog/product-list filteredProducts}}
 
-    {{!-- ГРАБЛЬ #3: два блока на одну модель --}}
-    <div data-ignition-block="catalog/cart-header"
-         data-ignition-depends="cart">
-    </div>
+    {{> catalog/cart-header cart}}
 
-    {{!-- ГРАБЛЬ #4: #each с push/pop --}}
-    <div data-ignition-block="catalog/cart-details"
-         data-ignition-depends="cart"
-         class="cart-details">
-    </div>
+    {{> catalog/cart-details cart}}
 
 </body>
 </html>

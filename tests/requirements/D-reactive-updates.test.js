@@ -11,7 +11,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createReactiveState } from '../../engine/core/runtime/state.js';
 import { registerTemplate, renderTemplate, resetRegistry } from '../../engine/core/runtime/render.js';
-import { initBlocks, initBinding, registerAction, processEventHandlers, resetActions } from '../../engine/core/runtime/binding.js';
+import { initBlocks, initBinding } from '../../engine/core/runtime/binding.js';
 
 describe('D. Reactive updates', () => {
   let state;
@@ -27,7 +27,6 @@ describe('D. Reactive updates', () => {
 
   afterEach(() => {
     resetRegistry();
-    resetActions();
   });
 
   describe('D1: Only dependent blocks re-render', () => {
@@ -205,44 +204,7 @@ describe('D. Reactive updates', () => {
     });
   });
 
-  describe('D5: Handlers restored after re-render', () => {
-    it('processEventHandlers re-attaches after block re-render', () => {
-      let clickCount = 0;
-
-      registerTemplate('block/interactive', (data) => {
-        return `<button data-ignition-on="click → increment">Click ${data.count}</button>`;
-      });
-
-      registerAction('increment', (s) => {
-        s.count = (s.count || 0) + 1;
-        clickCount++;
-      });
-
-      state.count = 0;
-
-      document.body.innerHTML = `
-        <div data-ignition-block="block/interactive" data-ignition-depends="count">
-          <button data-ignition-on="click → increment">Click 0</button>
-        </div>
-      `;
-
-      initBlocks(state);
-
-      // Re-render block manually (simulating state change)
-      const block = document.querySelector('[data-ignition-block]');
-      const html = renderTemplate('block/interactive', state);
-      const temp = document.createElement('div');
-      temp.innerHTML = html;
-      block.replaceChildren(...temp.childNodes);
-
-      // Attach handlers to new content
-      processEventHandlers(state, block.querySelector('button'));
-
-      const button = document.querySelector('button');
-      button.click();
-      expect(clickCount).toBe(1);
-    });
-
+  describe('D5: Bindings restored after re-render', () => {
     it('initBinding re-attaches after block re-render', () => {
       registerTemplate('block/form', (data) => {
         return `<input data-ignition-binding="form.name" value="">`;

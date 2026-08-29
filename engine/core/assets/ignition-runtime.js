@@ -39,12 +39,14 @@
 
 function buildBlockContext(data, parsed, getter) {
   if (parsed.mode === 'single') {
-    return parsed.paths[0] ? getter(data, parsed.paths[0].path) : data;
+    if (!parsed.paths[0]) return data;
+    if (parsed.paths[0].path === '.') return data;
+    return getter(data, parsed.paths[0].path);
   }
 
   const ctx = {};
   for (const { path, alias } of parsed.paths) {
-    ctx[alias] = getter(data, path);
+    ctx[alias] = path === '.' ? data : getter(data, path);
   }
   return ctx;
 }
@@ -134,6 +136,16 @@ function registerHelpersWith(Handlebars) {
     return new Handlebars.SafeString(JSON.stringify(context));
   });
 
+  Handlebars.registerHelper('eq', function (a, b) {
+    return a === b;
+  });
+
+  Handlebars.registerHelper('starFill', function (level, starNum) {
+    if (level >= starNum) return 100;
+    if (level >= starNum - 0.5) return 50;
+    return 0;
+  });
+
   registerBlockHelper(Handlebars, { getManifest });
 }
 
@@ -186,6 +198,8 @@ function registerBlockHelper(Handlebars, env) {
   let notifyDepth = 0;
   let pendingNotifications = [];
   let activeTracker = null;
+  const ephemeralTimers = new Map();
+  let suppressingEphemeralCancel = false;
 
   function doNotify(fullPath, oldVal, newVal) {
     for (const [pattern, callbacks] of listeners) {
@@ -243,6 +257,12 @@ function registerBlockHelper(Handlebars, env) {
         if (rawOld === rawNew) return true;
         target[key] = value;
         const path = prefix ? `${prefix}.${String(key)}` : String(key);
+        // A permanent (non-ephemeral) assignment cancels any pending ephemeral
+        // timer for this path, so a stale timer cannot null it out later.
+        if (!suppressingEphemeralCancel && ephemeralTimers.has(path)) {
+          clearTimeout(ephemeralTimers.get(path));
+          ephemeralTimers.delete(path);
+        }
         notify(path, old, value);
         return true;
       },
@@ -285,6 +305,35 @@ function registerBlockHelper(Handlebars, env) {
     const deps = new Set(activeTracker);
     activeTracker = prev;
     return deps;
+  };
+
+  state.set = function (path, value) {
+    const keys = String(path).split('.');
+    let target = state;
+    for (let i = 0; i < keys.length - 1; i++) {
+      target = target[keys[i]];
+      if (target === undefined || target === null) {
+        throw new Error(`Cannot set path "${path}": "${keys[i]}" is undefined`);
+      }
+    }
+    target[keys[keys.length - 1]] = value;
+  };
+
+  state.ephemeral = function (path, value, ttl) {
+    if (ephemeralTimers.has(path)) {
+      clearTimeout(ephemeralTimers.get(path));
+    }
+    state.set(path, value);
+    const timer = setTimeout(() => {
+      suppressingEphemeralCancel = true;
+      try {
+        state.set(path, null);
+      } finally {
+        suppressingEphemeralCancel = false;
+      }
+      ephemeralTimers.delete(path);
+    }, ttl);
+    ephemeralTimers.set(path, timer);
   };
 
   return state;
@@ -345,15 +394,11 @@ async function fetchJson(url) {
 }
 
   // ========== binding.js ==========
-  const actionRegistry = new Map();
-const boundElements = new WeakSet();
+  const boundElements = new WeakSet();
 const classBoundElements = new WeakSet();
 const attrBoundElements = new WeakSet();
-const handledElements = new WeakSet();
-
-function resetActions() {
-  actionRegistry.clear();
-}
+const textBoundElements = new WeakSet();
+const autoBoundElements = new WeakSet();
 
 function setByPath(obj, path, value) {
   const keys = path.split('.');
@@ -367,23 +412,6 @@ function setByPath(obj, path, value) {
 
 function getByPath(obj, path) {
   return path.split('.').reduce((cur, key) => cur?.[key], obj);
-}
-
-function parseArgs(argsStr) {
-  if (!argsStr || !argsStr.trim()) return [];
-  return argsStr.split(',').map(arg => {
-    const trimmed = arg.trim();
-    if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
-    if ((trimmed.startsWith("'") && trimmed.endsWith("'")) ||
-        (trimmed.startsWith('"') && trimmed.endsWith('"'))) {
-      return trimmed.slice(1, -1);
-    }
-    return trimmed;
-  });
-}
-
-function registerAction(name, fn) {
-  actionRegistry.set(name, fn);
 }
 
 function updateFormElement(element, val) {
@@ -401,6 +429,8 @@ function initBinding(state, element) {
   initFormBinding(state, element);
   initClassBinding(state, element);
   initAttrBinding(state, element);
+  initTextBinding(state, element);
+  initAutoBinding(state, element);
 }
 
 function initFormBinding(state, element) {
@@ -496,25 +526,77 @@ function initAttrBinding(state, element) {
   sync();
 }
 
-function processEventHandlers(state, element) {
-  const attr = element.getAttribute('data-ignition-on');
-  if (!attr) return;
-  if (handledElements.has(element)) return;
-  handledElements.add(element);
+function initTextBinding(state, element) {
+  const path = element.getAttribute('data-ignition-text');
+  if (!path) return;
+  if (textBoundElements.has(element)) return;
+  textBoundElements.add(element);
 
-  const declarations = attr.split(';').map(s => s.trim()).filter(Boolean);
-  for (const decl of declarations) {
-    const match = decl.match(/^(\w+)\s*(?:→|->)\s*(\w+)(?:\s*\(([^)]*)\))?$/);
-    if (!match) continue;
+  const sync = () => {
+    const val = getByPath(state, path);
+    element.textContent = val ?? '';
+  };
 
-    const [, eventName, actionName, argsStr] = match;
-    const args = parseArgs(argsStr);
+  state.subscribe(path, sync);
+  sync();
+}
 
-    element.addEventListener(eventName, (e) => {
-      if (eventName === 'submit') e.preventDefault();
-      const handler = actionRegistry.get(actionName);
-      if (handler) handler(state, ...args, e);
-    });
+function initAutoBinding(state, element) {
+  const tag = element.tagName.toLowerCase();
+  if (tag !== 'input' && tag !== 'textarea') return;
+  if (autoBoundElements.has(element)) return;
+
+  // Check for value="{{path}}" or checked="{{path}}"
+  const valueAttr = element.getAttribute('value');
+  const checkedAttr = element.getAttribute('checked');
+  
+  let path = null;
+  let type = null;
+
+  if (valueAttr && valueAttr.startsWith('{{') && valueAttr.endsWith('}}')) {
+    path = valueAttr.slice(2, -2).trim();
+    type = 'value';
+  } else if (checkedAttr && checkedAttr.startsWith('{{') && checkedAttr.endsWith('}}')) {
+    path = checkedAttr.slice(2, -2).trim();
+    type = 'checked';
+  }
+
+  if (!path) return;
+  
+  autoBoundElements.add(element);
+
+  // Set data-ignition-path for testing
+  element.setAttribute('data-ignition-path', path);
+
+  const isCheckbox = element.type === 'checkbox';
+  const eventType = isCheckbox ? 'change' : 'input';
+
+  // Two-way binding: element -> state
+  element.addEventListener(eventType, () => {
+    const val = isCheckbox ? element.checked : element.value;
+    setByPath(state, path, val);
+  });
+
+  // Two-way binding: state -> element
+  state.subscribe(path, () => {
+    const val = getByPath(state, path);
+    if (isCheckbox) {
+      const bool = !!val;
+      if (element.checked !== bool) element.checked = bool;
+    } else {
+      const str = val ?? '';
+      if (element.value !== str) element.value = str;
+    }
+  });
+
+  // Initial sync
+  const initial = getByPath(state, path);
+  if (initial !== undefined) {
+    if (isCheckbox) {
+      element.checked = !!initial;
+    } else {
+      element.value = initial ?? '';
+    }
   }
 }
 
@@ -523,8 +605,19 @@ function initBlocks(state, options = {}) {
   const blocks = document.querySelectorAll('[data-ignition-block]');
   blocks.forEach(block => {
     const templateName = block.getAttribute('data-ignition-block');
+    const dataPath = block.getAttribute('data-ignition-data');
     const dependsStr = block.getAttribute('data-ignition-depends') || '';
-    const depends = dependsStr.split(',').map(s => s.trim()).filter(Boolean);
+    
+    // v2: depends defaults to data if not specified
+    let depends;
+    if (dependsStr) {
+      depends = dependsStr.split(',').map(s => s.trim()).filter(Boolean);
+    } else if (dataPath) {
+      // Auto-depend on data paths
+      depends = dataPath.split(',').map(s => s.trim()).filter(Boolean);
+    } else {
+      depends = [];
+    }
 
     const customRenderer = renderers[templateName];
     const extraDeps = sourceDeps[templateName] || [];
@@ -536,14 +629,11 @@ function initBlocks(state, options = {}) {
     }
 
     function processBlockContent(root) {
-      root.querySelectorAll('[data-ignition-binding], [data-ignition-class]').forEach(el => {
+      root.querySelectorAll('[data-ignition-binding], [data-ignition-class], [data-ignition-text]').forEach(el => {
         initBinding(state, el);
       });
       root.querySelectorAll('*').forEach(el => {
         if (hasAttrBinding(el)) initBinding(state, el);
-      });
-      root.querySelectorAll('[data-ignition-on]').forEach(el => {
-        processEventHandlers(state, el);
       });
     }
 
@@ -778,9 +868,29 @@ async function loadDataset(state, url) {
 }
 
   // ========== Boot ==========
+
+  // Controllers registered before the runtime boots are queued and run once the
+  // reactive state is ready. This makes the auto-injected <script> controller
+  // files order-independent vs. the runtime's own DOM-ready boot.
+  var pendingControllers = [];
+
+  // Expose the live runtime immediately (before DOM-ready boot). The
+  // controller method gathers callbacks here; if the state already exists
+  // (a controller script loaded after boot), it runs the callback at once.
+  window.ignition = {
+    controller: function (cb) {
+      if (typeof cb !== 'function') return;
+      if (typeof window.__IGNITION_STATE__ !== 'undefined' && window.__IGNITION_STATE__) {
+        cb(window.__IGNITION_STATE__, (window.__IGNITION_MAKE_API__ || function () { return {}; })());
+      } else {
+        pendingControllers.push(cb);
+      }
+    }
+  };
+
   function processAllBindings(state, root) {
     var scope = root || document;
-    scope.querySelectorAll('[data-ignition-binding], [data-ignition-class]').forEach(function (el) {
+    scope.querySelectorAll('[data-ignition-binding], [data-ignition-class], [data-ignition-text]').forEach(function (el) {
       initBinding(state, el);
     });
     scope.querySelectorAll('*').forEach(function (el) {
@@ -789,11 +899,6 @@ async function loadDataset(state, url) {
       });
       if (hasAttr) initBinding(state, el);
     });
-  }
-
-  function processAllEventHandlers(state, root) {
-    var elements = (root || document).querySelectorAll('[data-ignition-on]');
-    elements.forEach(function (el) { processEventHandlers(state, el); });
   }
 
   function boot() {
@@ -822,36 +927,46 @@ async function loadDataset(state, url) {
     var state = createReactiveState(initialData);
 
     var blockOptions = { renderers: {}, sourceDeps: {}, afterHydrate: null };
-    if (typeof window.__IGNITION_PAGE_CONFIG__ === 'function') {
-      window.__IGNITION_PAGE_CONFIG__(state, {
+    var makeApi = function () {
+      return {
         computed: createComputed,
-        action: function (name, fn) { registerAction(name, fn); },
         registerTemplate: registerTemplate,
         registerHelper: function (name, fn) { Handlebars.registerHelper(name, fn); },
         loadDataset: function (url) { return loadDataset(state, url); },
         blockOptions: blockOptions
-      });
-    }
+      };
+    };
 
     initBlocks(state, blockOptions);
 
     processAllBindings(state);
-    processAllEventHandlers(state);
 
     window.__IGNITION_STATE__ = state;
+    window.__IGNITION_MAKE_API__ = makeApi;
 
     // Expose the live runtime so pagination and other client controllers
     // reuse the SAME template registry, helpers and reactive state.
     window.ignition = {
       state: state,
+      set: function (path, value) { state.set(path, value); },
+      ephemeral: function (path, value, ttl) { state.ephemeral(path, value, ttl); },
       registerTemplate: registerTemplate,
       getTemplate: getTemplate,
       renderTemplate: renderTemplate,
       fetchJson: fetchJson,
       hydrate: hydrate,
       computed: createComputed,
-      action: registerAction
+      // The controller is the external "who changes the model". Register it,
+      // and it runs as soon as the reactive state is ready.
+      controller: function (cb) {
+        if (typeof cb !== 'function') return;
+        cb(state, makeApi());
+      }
     };
+
+    // Replay controllers that were queued while the runtime was still booting.
+    pendingControllers.forEach(function (cb) { cb(state, makeApi()); });
+    pendingControllers = [];
   }
 
   // Auto-boot

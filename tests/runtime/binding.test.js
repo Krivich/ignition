@@ -4,17 +4,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createReactiveState } from '../../engine/core/runtime/state.js';
 import {
   initBinding,
-  initBlocks,
-  registerAction,
-  processEventHandlers,
-  resetActions
+  initBlocks
 } from '../../engine/core/runtime/binding.js';
 import { registerTemplate, resetRegistry } from '../../engine/core/runtime/render.js';
 
 describe('ignition — привязки и обработчики', () => {
 
   afterEach(() => {
-    resetActions();
     resetRegistry();
   });
 
@@ -44,6 +40,20 @@ describe('ignition — привязки и обработчики', () => {
       initBinding(state, input);
       state.ui.searchQuery = 'обновлено';
       expect(input.value).toBe('обновлено');
+    });
+
+    it('state → input: каретка не сбрасывается при синхронизации', () => {
+      const input = document.createElement('input');
+      input.setAttribute('data-ignition-binding', 'ui.searchQuery');
+      document.body.appendChild(input);
+      initBinding(state, input);
+      input.value = 'hello';
+      // Пользователь поставил каретку в середину.
+      input.setSelectionRange(2, 2);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      // Синхронизация state → element не должна сбросить позицию каретки к концу.
+      expect(state.ui.searchQuery).toBe('hello');
+      expect(input.selectionStart).toBe(2);
     });
 
     it('select → state: селект мутирует state', () => {
@@ -116,115 +126,6 @@ describe('ignition — привязки и обработчики', () => {
       document.body.appendChild(checkbox);
       initBinding(state, checkbox);
       expect(checkbox.checked).toBe(true);
-    });
-  });
-
-  describe('data-ignition-on — обработчики событий', () => {
-    let state;
-
-    beforeEach(() => {
-      state = createReactiveState({
-        cart: { items: [], total: 0 }
-      });
-    });
-
-    it('click → actionName(): вызывает зарегистрированное действие', () => {
-      const handler = vi.fn();
-      registerAction('cartAdd', handler);
-      const btn = document.createElement('button');
-      btn.setAttribute('data-ignition-on', 'click → cartAdd()');
-      document.body.appendChild(btn);
-      processEventHandlers(state, btn);
-      btn.click();
-      expect(handler).toHaveBeenCalledTimes(1);
-      expect(handler).toHaveBeenCalledWith(state, expect.any(Event));
-    });
-
-    it('click → actionName(args): аргументы передаются в action', () => {
-      const handler = vi.fn();
-      registerAction('addItem', handler);
-      const btn = document.createElement('button');
-      btn.setAttribute('data-ignition-on', 'click → addItem(42, 990)');
-      document.body.appendChild(btn);
-      processEventHandlers(state, btn);
-      btn.click();
-      expect(handler).toHaveBeenCalledWith(state, 42, 990, expect.any(Event));
-    });
-
-    it('submit → actionName: предотвращает дефолтное поведение формы', () => {
-      const handler = vi.fn();
-      registerAction('formSubmit', handler);
-      const form = document.createElement('form');
-      form.setAttribute('data-ignition-on', 'submit → formSubmit');
-      document.body.appendChild(form);
-      processEventHandlers(state, form);
-      const event = new Event('submit', { bubbles: true, cancelable: true });
-      form.dispatchEvent(event);
-      expect(event.defaultPrevented).toBe(true);
-      expect(handler).toHaveBeenCalledWith(state, event);
-    });
-
-    it('action получает event объект с нужными свойствами', () => {
-      const handler = vi.fn();
-      registerAction('keyHandler', handler);
-      const input = document.createElement('input');
-      input.setAttribute('data-ignition-on', 'keydown → keyHandler()');
-      document.body.appendChild(input);
-      processEventHandlers(state, input);
-      const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true });
-      input.dispatchEvent(event);
-      const receivedEvent = handler.mock.calls[0][1];
-      expect(receivedEvent.key).toBe('Enter');
-      expect(receivedEvent.type).toBe('keydown');
-      expect(receivedEvent.target).toBe(input);
-    });
-
-    it('action может мутировать state', () => {
-      registerAction('cartAdd', (s) => {
-        s.cart.items.push({ id: 1 });
-        s.cart.total = s.cart.items.length;
-      });
-      const btn = document.createElement('button');
-      btn.setAttribute('data-ignition-on', 'click → cartAdd()');
-      document.body.appendChild(btn);
-      processEventHandlers(state, btn);
-      btn.click();
-      expect(state.cart.items).toHaveLength(1);
-      expect(state.cart.total).toBe(1);
-    });
-
-    it('keydown → actionName(): вызывает действие по нажатию клавиши', () => {
-      const handler = vi.fn();
-      registerAction('submitSkill', handler);
-      const input = document.createElement('input');
-      input.setAttribute('data-ignition-on', 'keydown → submitSkill()');
-      document.body.appendChild(input);
-      processEventHandlers(state, input);
-      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      expect(handler).toHaveBeenCalledTimes(1);
-      expect(handler).toHaveBeenCalledWith(state, expect.any(KeyboardEvent));
-    });
-
-    it('keydown → actionName(args): аргументы передаются', () => {
-      const handler = vi.fn();
-      registerAction('filterBy', handler);
-      const input = document.createElement('input');
-      input.setAttribute('data-ignition-on', 'keydown → filterBy(42)');
-      document.body.appendChild(input);
-      processEventHandlers(state, input);
-      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
-      expect(handler).toHaveBeenCalledWith(state, 42, expect.any(KeyboardEvent));
-    });
-
-    it('keyup → actionName():keyup тоже работает', () => {
-      const handler = vi.fn();
-      registerAction('onKeyUp', handler);
-      const input = document.createElement('input');
-      input.setAttribute('data-ignition-on', 'keyup → onKeyUp()');
-      document.body.appendChild(input);
-      processEventHandlers(state, input);
-      input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', bubbles: true }));
-      expect(handler).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -443,65 +344,6 @@ describe('ignition — привязки и обработчики', () => {
       state.categories = ['books'];
       expect(block.innerHTML).toContain('<span class="category">books</span>');
       expect(block.innerHTML).not.toContain('electronics');
-    });
-  });
-
-  describe('несколько data-ignition-on на одном элементе', () => {
-    let state;
-
-    beforeEach(() => {
-      state = createReactiveState({ count: 0 });
-    });
-
-    it('поддерживает два обработчика через точку с запятой', () => {
-      const clickHandler = vi.fn();
-      const keydownHandler = vi.fn();
-      registerAction('onClick', clickHandler);
-      registerAction('onKeydown', keydownHandler);
-
-      const div = document.createElement('div');
-      div.setAttribute('data-ignition-on', 'click -> onClick(); keydown -> onKeydown()');
-      document.body.appendChild(div);
-      processEventHandlers(state, div);
-
-      div.click();
-      expect(clickHandler).toHaveBeenCalledTimes(1);
-      expect(keydownHandler).not.toHaveBeenCalled();
-
-      div.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      expect(keydownHandler).toHaveBeenCalledTimes(1);
-      expect(clickHandler).toHaveBeenCalledTimes(1);
-    });
-
-    it('сохраняет аргументы для каждого обработчика', () => {
-      const clickHandler = vi.fn();
-      const keydownHandler = vi.fn();
-      registerAction('add', clickHandler);
-      registerAction('submit', keydownHandler);
-
-      const div = document.createElement('div');
-      div.setAttribute('data-ignition-on', 'click -> add(1, 2); keydown -> submit(42)');
-      document.body.appendChild(div);
-      processEventHandlers(state, div);
-
-      div.click();
-      expect(clickHandler).toHaveBeenCalledWith(state, 1, 2, expect.any(Event));
-
-      div.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      expect(keydownHandler).toHaveBeenCalledWith(state, 42, expect.any(KeyboardEvent));
-    });
-
-    it('одиночный обработчик продолжает работать', () => {
-      const handler = vi.fn();
-      registerAction('single', handler);
-
-      const btn = document.createElement('button');
-      btn.setAttribute('data-ignition-on', 'click -> single()');
-      document.body.appendChild(btn);
-      processEventHandlers(state, btn);
-
-      btn.click();
-      expect(handler).toHaveBeenCalledTimes(1);
     });
   });
 

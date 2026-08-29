@@ -50,9 +50,6 @@
     {{!-- Даже текущая страница доступна --}}
     <meta name="robots" content="{{#ifCond pagination.currentPage '==' 1}}index, follow{{else}}noindex, follow{{/ifCond}}">
 
-
-    <script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js"></script>
-    <script src="/assets/ignition-pagination.js" defer></script>
     <style>
         .catalog-grid {
             display: grid;
@@ -95,12 +92,11 @@
         .pagination a:hover:not(.active) {
             background-color: #f0f8ff;
         }
-        .dynamic-content {
+        .user-section {
             margin-top: 2rem;
             padding: 1.5rem;
             border: 1px dashed #0066cc;
             border-radius: 8px;
-            min-height: 100px;
         }
     </style>
 </head>
@@ -118,59 +114,8 @@
             dataset=dataset
     }}
 
-    <div class="dynamic-content" id="dynamic-content">
-        <p>Этот контент будет обновлен динамически через CSR после загрузки страницы.</p>
-    </div>
+    {{!-- Реактивная user-секция: данные user, управляется внешним контроллером --}}
+    {{> catalog/user user}}
 </main>
-
-<script id="dynamic-template" type="text/x-handlebars-template">
-    <div class="user-section">
-    {{#if user}}
-        <h3>Привет, {{user.name}}!</h3>
-        <p>У вас {{favorites.length}} {{declineWord favorites.length "товар" "товара" "товаров"}} в избранном.</p>
-        <button id="toggle-favorite">Добавить в избранное</button>
-    {{else}}
-        <p>Войдите, чтобы управлять избранным</p>
-        <button id="login-btn">Войти</button>
-    {{/if}}
-    </div>
-</script>
-
-<script>
-    document.addEventListener('DOMContentLoaded', () => {
-        // Динамическое обновление контента
-        const dynamicContent = document.getElementById('dynamic-content');
-        const templateSource = document.getElementById('dynamic-template').innerHTML;
-        const template = Handlebars.compile(templateSource);
-
-        // Регистрация хелпера для склонения слов
-        Handlebars.registerHelper('declineWord', function(count, one, two, five) {
-            count = Math.abs(count) % 100;
-            const n1 = count % 10;
-            if (count > 10 && count < 20) return five;
-            if (n1 > 1 && n1 < 5) return two;
-            if (n1 === 1) return one;
-            return five;
-        });
-
-        const userData = {
-            user: {
-                name: 'Алексей',
-                favorites: [123, 456]
-            }
-        };
-
-        dynamicContent.innerHTML = template(userData);
-
-        // Обработчики событий
-        document.getElementById('toggle-favorite')?.addEventListener('click', () => {
-            alert('Товар добавлен в избранное!');
-        });
-
-        document.getElementById('login-btn')?.addEventListener('click', () => {
-            alert('Редирект на страницу входа...');
-        });
-    });
-</script>
 </body>
 </html>

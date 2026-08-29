@@ -1,5 +1,30 @@
 import { describe, it, expect } from 'vitest';
-import { extractIgnitionPaths, deriveInitialState } from '../../engine/utils/deriveInitialState.js';
+import { extractIgnitionPaths, deriveInitialState, needsRuntime } from '../../engine/utils/deriveInitialState.js';
+
+describe('needsRuntime — активация реактивного рантайма', () => {
+  it('НЕТ: чистая статическая страница без признаков живости', () => {
+    expect(needsRuntime('<html><body><h1 data-ignition-text="title">Welcome</h1></body></html>')).toBe(false);
+  });
+
+  it('НЕТ: data-ignition-block без пагинации/контроллера/интерактива (статическая композиция)', () => {
+    const html = '<div data-ignition-block="layout/footer" data-ignition-data="footer" data-ignition-depends="footer"></div>';
+    expect(needsRuntime(html)).toBe(false);
+  });
+
+  it('ДА: пагинация — системный мини-контроллер (data-ignition-pagination)', () => {
+    const html = '<div id="p" data-ignition-pagination=\'{"collection":"products"}\'></div>';
+    expect(needsRuntime(html)).toBe(true);
+  });
+
+  it('ДА: интерактивные атрибуты (binding/class/attr)', () => {
+    expect(needsRuntime('<input data-ignition-binding="ui.query">')).toBe(true);
+    expect(needsRuntime('<button data-ignition-class="is-active: ui.valid"></button>')).toBe(true);
+  });
+
+  it('ДА: автобиндинги из анализа шаблона (value="{{path}}")', () => {
+    expect(needsRuntime('<input value="{{ui.query}}">', { autobindings: [{ path: 'ui.query' }] })).toBe(true);
+  });
+});
 
 describe('deriveInitialState', () => {
   const fullData = {
@@ -32,6 +57,13 @@ describe('deriveInitialState', () => {
     `;
     const subset = deriveInitialState(html, fullData);
     expect(subset).toEqual(fullData);
+  });
+
+  it('includes auto-generated data-ignition-text paths in the compact subset', () => {
+    const html = '<span data-ignition-text="ui.query">{{ui.query}}</span>';
+    const subset = deriveInitialState(html, fullData);
+    expect(extractIgnitionPaths(html)).toContain('ui.query');
+    expect(subset).toEqual({ ui: { query: '' } });
   });
 
   it('derives a compact subset for pure block pages', () => {

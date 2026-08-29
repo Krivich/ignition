@@ -1,0 +1,10 @@
+<div class="user-section" id="user-section">
+  {{#if loggedIn}}
+    <h3>Привет, {{name}}!</h3>
+    <p>У вас {{favorites.length}} {{declineWord favorites.length "товар" "товара" "товаров"}} в избранном.</p>
+    <button type="button" id="toggle-favorite">Добавить в избранное</button>
+  {{else}}
+    <p>Войдите, чтобы управлять избранным</p>
+    <button type="button" id="login-btn">Войти</button>
+  {{/if}}
+</div>

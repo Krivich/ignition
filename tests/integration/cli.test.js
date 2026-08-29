@@ -73,8 +73,8 @@ describe('CLI: ignition build', () => {
     // Verify output exists
     const htmlPath = path.join(tmpDir, 'output', 'public', 'landing', 'default.html');
     const content = await fs.readFile(htmlPath, 'utf8');
-    expect(content).toContain('<h1>My Site</h1>');
-    expect(content).toContain('<p>Welcome</p>');
+    expect(content).toContain('<h1 data-ignition-text="title">My Site</h1>');
+    expect(content).toContain('<p data-ignition-text="description">Welcome</p>');
   });
 
   it('builds multiple layouts and datasets', async () => {
@@ -247,27 +247,42 @@ describe('CLI: ignition build', () => {
     expect(files).toContain('3.html');
 
     // --- 2. Each page renders different items (SSR split is correct) ---
+    // Note: with v2 auto-inject the full dataset ships as client boot data so
+    // the runtime can power client-side pagination. We must scope the check to
+    // the SSR-rendered grid, not the whole HTML.
+    const gridHtml = (html) => {
+      const m = html.match(/<div class="items">.*?<\/div>/s);
+      return m ? m[0] : '';
+    };
+
     const page1 = await fs.readFile(path.join(pageDir, '1.html'), 'utf8');
     const page2 = await fs.readFile(path.join(pageDir, '2.html'), 'utf8');
     const page3 = await fs.readFile(path.join(pageDir, '3.html'), 'utf8');
 
     expect(page1).toContain('iPhone');
     expect(page1).toContain('Samsung');
-    expect(page1).not.toContain('Pixel');
+    expect(gridHtml(page1)).not.toContain('Pixel');
 
     expect(page2).toContain('Pixel');
     expect(page2).toContain('OnePlus');
-    expect(page2).not.toContain('iPhone');
-    expect(page2).not.toContain('Xiaomi');
+    expect(gridHtml(page2)).not.toContain('iPhone');
+    expect(gridHtml(page2)).not.toContain('Xiaomi');
 
     expect(page3).toContain('Xiaomi');
-    expect(page3).not.toContain('iPhone');
+    expect(gridHtml(page3)).not.toContain('iPhone');
 
     // --- 3. Each page is valid HTML with handlebars + CSR script ---
     for (const content of [page1, page2, page3]) {
       expect(content).toContain('handlebars.min.js');
       expect(content).toContain('ignition-pagination.js');
       expect(content).toContain('</html>');
+    }
+
+    // --- 3b. v2 auto-inject: pagination pages get the reactivity runtime even
+    //     when the template did not hand-write it ---
+    for (const content of [page1, page2, page3]) {
+      expect(content).toContain('ignition-runtime.js');
+      expect(content).toContain('__IGNITION_INITIAL_DATA__');
     }
 
     // --- 4. CSR hook: data-ignition-pagination attribute exists with correct config ---

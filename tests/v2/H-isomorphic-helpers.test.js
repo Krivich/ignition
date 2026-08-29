@@ -37,4 +37,13 @@ describe('H. Изоморфные хелперы', () => {
     expect(html).toContain('<span>2</span>');
     expect(html).toContain('<span>3</span>');
   });
+
+  it('H3: starFill — изоморфный хелпер уровня навыка (SSR-ожидание demo)', () => {
+    registerHelpersWith(Handlebars);
+
+    const template = Handlebars.compile('{{starFill level 3}}');
+    expect(template({ level: 3 })).toBe('100');
+    expect(template({ level: 2.5 })).toBe('50');
+    expect(template({ level: 1 })).toBe('0');
+  });
 });

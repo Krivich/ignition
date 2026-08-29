@@ -147,13 +147,13 @@ describe('B. SSR и лёгкая страница', () => {
     expect(initialData.unused).toBeDefined();
   });
 
-  it('B3: preload полного датасета инжектится неблокирующе', async () => {
+  it('B3: чисто блочная страница НЕ получает preload (компактный initialData, static)', async () => {
     const templatesDir = config.source.templates;
     await fs.mkdir(path.join(templatesDir, 'b3'), { recursive: true });
 
     const layout = `<!DOCTYPE html>
 <html>
-<head><script>window.__IGNITION_INITIAL_DATA__ = {{{initialData}}};</script></head>
+<head></head>
 <body>
   {{> b3/list items}}
 </body></html>`;
@@ -174,7 +174,42 @@ describe('B. SSR и лёгкая страница', () => {
 
     const html = await fs.readFile(path.join(outputDir, 'main.html'), 'utf8');
 
-    expect(html).toContain('<link rel="preload" href="/data/b3/main.json" as="fetch" crossorigin="anonymous">');
+    // Static block-only page: no one can change the model, so no preload, no runtime.
+    expect(html).not.toContain('rel="preload"');
+    expect(html).not.toContain('ignition-runtime.js');
+  });
+
+  it('B3b: интерактивная страница (биндинг) получает preload полного датасета', async () => {
+    const templatesDir = config.source.templates;
+    await fs.mkdir(path.join(templatesDir, 'b3b'), { recursive: true });
+
+    const layout = `<!DOCTYPE html>
+<html>
+<head></head>
+<body>
+  <input value="{{form.name}}">
+  {{> b3b/list items}}
+</body></html>`;
+
+    const partial = `{{#each this}}<div>{{name}}</div>{{/each}}`;
+
+    await fs.writeFile(path.join(templatesDir, 'b3b.hbs'), layout);
+    await fs.writeFile(path.join(templatesDir, 'b3b', 'list.hbs'), partial);
+
+    const data = {
+      form: { name: '' },
+      items: [{ name: 'X' }],
+      unused: { big: [1, 2, 3, 4, 5] },
+      layout: 'b3b',
+      dataset: 'main',
+    };
+
+    const outputDir = path.join(config.output.html, 'b3b');
+    await renderTemplate(path.join(templatesDir, 'b3b.hbs'), data, outputDir, 'main', 'b3b');
+
+    const html = await fs.readFile(path.join(outputDir, 'main.html'), 'utf8');
+
+    expect(html).toContain('<link rel="preload" href="/data/b3b/main.json" as="fetch" crossorigin="anonymous">');
     const headClose = html.indexOf('</head>');
     const linkPos = html.indexOf('rel="preload"');
     expect(linkPos).toBeLessThan(headClose);

@@ -11,7 +11,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { readBuiltHTML } from './helpers.js';
 import { createReactiveState } from '../../engine/core/runtime/state.js';
 import { registerTemplate, resetRegistry } from '../../engine/core/runtime/render.js';
-import { initBlocks, resetActions } from '../../engine/core/runtime/binding.js';
+import { initBlocks } from '../../engine/core/runtime/binding.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -26,7 +26,7 @@ describe('H. Reliability and compatibility', () => {
     });
 
     it('demo page has server-rendered block content in HTML', () => {
-      const html = readBuiltHTML('demo/app.html');
+      const html = readBuiltHTML('extmob/recommend.html');
 
       // Blocks should have server-rendered content
       const blockMatch = html.match(/data-ignition-block="[^"]*"/g);
@@ -121,7 +121,7 @@ describe('H. Reliability and compatibility', () => {
     });
 
     it('built page escapes </script> in inline data', () => {
-      const html = readBuiltHTML('demo/app.html');
+      const html = readBuiltHTML('extmob/recommend.html');
 
       // Check that there are no unescaped </script> inside script blocks
       // (except the legitimate closing </script> tags)
@@ -159,7 +159,7 @@ describe('H. Reliability and compatibility', () => {
       expect(fs.existsSync(path.join(outputDir, 'catalog', 'books', 'page', '1.html'))).toBe(true);
 
       // Demo page
-      expect(fs.existsSync(path.join(outputDir, 'demo', 'app.html'))).toBe(true);
+      expect(fs.existsSync(path.join(outputDir, 'extmob', 'recommend.html'))).toBe(true);
     });
 
     it('data files are copied to output', () => {
@@ -167,7 +167,7 @@ describe('H. Reliability and compatibility', () => {
 
       expect(fs.existsSync(path.join(dataDir, 'landing', 'default.json'))).toBe(true);
       expect(fs.existsSync(path.join(dataDir, 'catalog', 'books.json'))).toBe(true);
-      expect(fs.existsSync(path.join(dataDir, 'demo', 'app.json'))).toBe(true);
+      expect(fs.existsSync(path.join(dataDir, 'extmob', 'recommend.json'))).toBe(true);
     });
 
     it('sitemap is generated', () => {

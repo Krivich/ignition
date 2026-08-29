@@ -64,7 +64,8 @@ program.hook('preAction', (command) => {
         ...appConfig,
         source: {
             templates: path.resolve(opts.source, 'templates'),
-            data: path.resolve(opts.source, 'data')
+            data: path.resolve(opts.source, 'data'),
+            controllers: path.resolve(opts.source, 'controllers')
         },
         output: {
             public: path.join(outputBase, 'public'),
@@ -201,6 +202,10 @@ async function copyUniversalAssets() {
         {
             src: path.join(__dirname, '..', 'core', 'assets', 'ignition-runtime.js'),
             dest: path.join(config.output.assets, 'ignition-runtime.js')
+        },
+        {
+            src: path.join(__dirname, '..', '..', 'node_modules', 'handlebars', 'dist', 'handlebars.min.js'),
+            dest: path.join(config.output.assets, 'handlebars.min.js')
         }
     ];
 

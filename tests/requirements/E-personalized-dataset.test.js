@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createReactiveState } from '../../engine/core/runtime/state.js';
 import { registerTemplate, resetRegistry } from '../../engine/core/runtime/render.js';
-import { initBlocks, resetActions } from '../../engine/core/runtime/binding.js';
+import { initBlocks } from '../../engine/core/runtime/binding.js';
 import { getSlice, diffSlices, mergeSlices } from '../../engine/core/runtime/diff.js';
 
 describe('E. Personalized dataset and partial pre-rendering (real diff module)', () => {
@@ -37,7 +37,6 @@ describe('E. Personalized dataset and partial pre-rendering (real diff module)',
 
   afterEach(() => {
     resetRegistry();
-    resetActions();
   });
 
   describe('E1: Client can load different dataset (getSlice)', () => {

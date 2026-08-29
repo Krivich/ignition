@@ -85,6 +85,16 @@ export function registerHelpersWith(Handlebars) {
     return new Handlebars.SafeString(JSON.stringify(context));
   });
 
+  Handlebars.registerHelper('eq', function (a, b) {
+    return a === b;
+  });
+
+  Handlebars.registerHelper('starFill', function (level, starNum) {
+    if (level >= starNum) return 100;
+    if (level >= starNum - 0.5) return 50;
+    return 0;
+  });
+
   registerBlockHelper(Handlebars, { getManifest });
 }
 

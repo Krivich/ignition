@@ -282,7 +282,7 @@ describe('A+B: Server-side block rendering + compact manifest (real engine)', ()
     expect(initialData.unused).toBeUndefined();
   });
 
-  it('A7: injects preload link for the full dataset on reactive pages', async () => {
+  it('A7: `{{#block}}`-only page is static — no preload, no runtime', async () => {
     await scaffold();
 
     const templatePath = path.join(config.source.templates, 'ssr.hbs');
@@ -298,10 +298,10 @@ describe('A+B: Server-side block rendering + compact manifest (real engine)', ()
     await renderTemplate(templatePath, data, outputDir, 'main', 'ssr');
     const html = await fs.readFile(path.join(outputDir, 'main.html'), 'utf8');
 
-    expect(html).toContain('<link rel="preload" href="/data/ssr/main.json" as="fetch" crossorigin="anonymous">');
-    const headClose = html.indexOf('</head>');
-    const linkPos = html.indexOf('rel="preload"');
-    expect(linkPos).toBeLessThan(headClose);
+    // A {{#block}} with no bindings/controller/pagination is static: its content
+    // is SSR-filled and no one re-renders it, so no preload and no runtime.
+    expect(html).not.toContain('rel="preload"');
+    expect(html).not.toContain('ignition-runtime.js');
   });
 
   it('A8: does not inject preload on pages without ignition attributes', async () => {

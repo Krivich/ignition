@@ -28,6 +28,10 @@ export function extractIgnitionPaths(html) {
   const bindingRe = /data-ignition-binding="([^"]+)"/g;
   while ((m = bindingRe.exec(html)) !== null) add(m[1]);
 
+  // data-ignition-text="path" (auto-generated point projection)
+  const textRe = /data-ignition-text="([^"]+)"/g;
+  while ((m = textRe.exec(html)) !== null) add(m[1]);
+
   // data-ignition-data="a, b"
   const dataRe = /data-ignition-data="([^"]+)"/g;
   while ((m = dataRe.exec(html)) !== null) {
@@ -64,7 +68,7 @@ export function extractIgnitionPaths(html) {
 
 function hasInteractiveAttributes(html, analysis = null) {
   // Check for v1 interactive attributes
-  if (/data-ignition-binding=|data-ignition-class=|data-ignition-attr-[\w-]+=|data-ignition-on=/.test(html)) {
+  if (/data-ignition-binding=|data-ignition-class=|data-ignition-attr-[\w-]+=/.test(html)) {
     return true;
   }
   
@@ -73,6 +77,26 @@ function hasInteractiveAttributes(html, analysis = null) {
     return true;
   }
   
+  return false;
+}
+
+/**
+ * Decide whether a rendered page needs the client-side reactivity runtime.
+ *
+ * The runtime is needed only when there is "someone who can change the model":
+ *   - a system mini-controller (pagination: data-ignition-pagination), or
+ *   - interactive attributes / autobindings (data-ignition-binding/class/attr).
+ *
+ * An external controller or a personalized-dataset marker are detected at the
+ * layout/render level (they are not necessarily visible in the HTML) and are
+ * OR'ed in by the renderer.
+ *
+ * A bare `data-ignition-block` without any of the above is static: its content
+ * was SSR-filled and no one will re-render it, so the runtime is NOT needed.
+ */
+export function needsRuntime(html, analysis = null) {
+  if (/data-ignition-pagination=/.test(html)) return true;
+  if (hasInteractiveAttributes(html, analysis)) return true;
   return false;
 }
 

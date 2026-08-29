@@ -10,5 +10,13 @@
   },
   "ui": {
     "period": "week"
-  }
+  },
+  "totalSales": 46000,
+  "avgSales": 15333,
+  "bestDay": { "date": "2026-08-02", "amount": 23000 },
+  "filteredSales": [
+    { "date": "2026-08-01", "amount": 15000 },
+    { "date": "2026-08-02", "amount": 23000 },
+    { "date": "2026-08-03", "amount": 8000 }
+  ]
 }

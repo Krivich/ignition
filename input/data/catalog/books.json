@@ -1,5 +1,6 @@
 {
   "title": "Книги и учебная литература",
+  "user": { "loggedIn": false, "name": null, "favorites": [] },
   "products": [
     {
       "id": "book-1",

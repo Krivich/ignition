@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{meta.title}}</title>
+  <meta name="description" content="{{meta.description}}">
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 0 auto; padding: 24px; color: #222; }
+    h1 { font-size: 26px; }
+    .form-grid { display: grid; gap: 12px; }
+    label { font-size: 14px; color: #555; }
+    input, textarea, select, button { font: inherit; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; }
+    .skills-list { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+    .skill-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border: 1px solid #eee; border-radius: 6px; }
+    .skill-name { font-weight: 600; }
+    .star { color: #ccc; }
+    .star.fill { color: #f59e0b; }
+    .star.half { color: #fbbf24; }
+    .actions { display: flex; gap: 8px; margin-top: 8px; }
+    .toast { margin-top: 12px; padding: 10px 12px; border-radius: 6px; background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <h1>{{meta.title}}</h1>
+
+  <div id="toast" data-ignition-text="ui.toastMessage" class="toast"></div>
+
+  <section>
+    <h2>Навыки</h2>
+    {{> extmob/skills skills}}
+    <div class="actions">
+      <input id="newSkillInput" type="text" value="{{ui.newSkill}}" placeholder="Новый навык">
+      <button id="addSkillBtn" type="button" data-ignition-attr-disabled="!ui.newSkill">Добавить</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Анкета</h2>
+    <form id="offerForm" class="form-grid">
+      <label>Email
+        <input type="email" name="email" value="{{candidate.email}}">
+      </label>
+      <label>Имя
+        <input type="text" name="preferredName" value="{{candidate.preferredName}}">
+      </label>
+      <label>Отрасль
+        <select name="industry" data-ignition-binding="candidate.industry">
+          <option value="" {{#unless candidate.industry}}selected{{/unless}} disabled>Выберите отрасль</option>
+          {{#each reference.industries}}
+            <option value="{{this}}" {{#if (eq this ../candidate.industry)}}selected{{/if}}>{{this}}</option>
+          {{/each}}
+        </select>
+      </label>
+      <label>
+        <input type="checkbox" name="consent" data-ignition-binding="candidate.consent" {{#if candidate.consent}}checked{{/if}}>
+        Согласен на обработку данных
+      </label>
+      <label>Описание
+        <textarea name="description">{{candidate.description}}</textarea>
+      </label>
+      <button type="submit" data-ignition-attr-disabled="!ui.isValid">Опубликовать</button>
+    </form>
+  </section>
+</body>
+</html>

@@ -1,1053 +1,493 @@
-﻿# Reactivity in Ignition
+﻿# Ignition v2 — Framework Guide
 
-How the client-side reactivity system works and how to use it.
+Ignition is a **dumb renderer** for JSON + Handlebars with hybrid SSR/CSR. It renders static HTML on the server and optionally attaches reactive state on the client. Business logic always lives outside the engine.
 
-## Architecture
+This file has two parts:
 
-Ignition uses **hybrid SSR/CSR**:
+- **Part 1 — Everyday Guide**: read this once and you can build pages.
+- **Part 2 — Deep Dive**: read this when you want to understand what the engine injects and why.
 
-1. **Server** renders JSON + Handlebars -> HTML. Reactive regions are declared with the `{{#block}}` helper; the server fills each region with server-rendered content and emits a compact block-keyed manifest.
-2. **Client** attaches reactive state to the existing DOM and re-renders only the blocks whose data changed.
+---
+
+# Part 1. Everyday Guide
+
+## 1. Core Model
 
 ```
-Server:  JSON + Template -> HTML (pre-rendered block content + compact manifest)
-Client:  HTML -> Reactive State -> Blocks re-render on data changes
+Model    = JSON data       → input/data/
+View     = Handlebars      → input/templates/
+Controller = external JS   → input/controllers/{layout}.js
 ```
 
-There is no virtual DOM — reactivity works by re-rendering Handlebars block templates and replacing block content.
+The engine combines JSON + template → HTML. If the page is reactive, it also injects a small runtime that re-renders DOM regions when state changes.
 
-The client runtime (`ignition-runtime.js`) provides:
+## 2. Layout and Dataset
 
-| Module | Purpose |
-|--------|---------|
-| **State** | Reactive proxy with nested object tracking and path-based subscriptions |
-| **Blocks** | Declarative DOM regions that re-render when their dependencies change |
-| **Bindings** | Two-way data binding between form elements and state |
-| **Actions** | Event handlers that mutate state, triggering block re-renders |
-| **Computed** | Cached derived values with lazy recomputation |
-| **Diff** | Personalized dataset loading — re-render only changed blocks |
+- **Layout** = `input/templates/{layout}.hbs`
+- **Dataset** = `input/data/{layout}/{dataset}.json`
+- **Partials** = `input/templates/{layout}/{partial}.hbs`
 
-## Quick Start
+One layout works with any number of datasets.
 
-A reactivity-enabled page needs four things in the `<head>`:
+Generated URLs:
 
-```html
-<script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js"></script>
-<script src="/assets/ignition-runtime.js"></script>
-<script src="/assets/templates.js"></script>
-<script>
-    window.__IGNITION_INITIAL_DATA__ = {{{initialData}}};
-</script>
+```
+/{layout}/{dataset}.html                 → single page
+/{layout}/{dataset}/page/{number}.html   → paginated
 ```
 
-Declare blocks declaratively in the layout:
+Example:
+
+```
+input/templates/catalog.hbs
+input/templates/catalog/page.hbs
+input/templates/catalog/user.hbs
+input/data/catalog/books.json
+```
+
+## 3. Reactive Regions (Auto-Blocks)
+
+Include a partial with a data path and it becomes a reactive region:
 
 ```handlebars
-{{#block name="catalog/product-list" data="products" depends="filtered"}}
-    <p class="empty">No products</p>
-{{/block}}
+{{> extmob/skills skills}}
 ```
 
-Optional page config for actions, computed values, custom helpers, etc.:
+The engine wraps it automatically:
 
 ```html
-<script>
-window.__IGNITION_PAGE_CONFIG__ = function(state, api) {
-    // Register actions, helpers, computed values here
-};
-</script>
-```
-
-### `__IGNITION_INITIAL_DATA__`
-
-Always inject the initial state through `__IGNITION_INITIAL_DATA__`. The framework derives the payload automatically from the rendered HTML:
-
-- For **pure block pages** (only `data-ignition-block`, `data-ignition-data`, `data-ignition-depends`) it inlines a compact subset — exactly the slices used by blocks.
-- For **interactive pages** with `data-ignition-binding`, `data-ignition-on`, `data-ignition-class` or `data-ignition-attr-*` it inlines the **full dataset**, because custom actions, computed values and renderers may read any path.
-
-If a pure block page still needs a path that is not referenced in any attribute (for example, a hidden state branch used by a custom renderer), declare it explicitly:
-
-```handlebars
-<meta data-ignition-include="hiddenBranch">
-```
-
-`__IGNITION_MANIFEST__` is kept only for `loadDataset()` — it records which slices the server actually rendered, so the client can diff a freshly loaded dataset and re-render only changed blocks.
-
-### Preloading the Full Dataset
-
-For reactive pages the build automatically injects a non-blocking preload link into `<head>`:
-
-```html
-<link rel="preload" href="/data/{layout}/{dataset}.json" as="fetch" crossorigin="anonymous">
-```
-
-This starts downloading the full dataset immediately, in parallel with rendering. It does not block `load` or LCP, so Googlebot still sees a complete, fast page. By the time the user finishes reading and clicks a button, the JSON is already cached or nearly complete.
-
-## Boot Sequence
-
-When the page loads, `ignition-runtime.js` runs this sequence:
-
-1. **Register helpers** — canonical helpers from `helpers.js` are registered against `Handlebars`
-2. **Compile templates** — reads `window.__IGNITION_TEMPLATES__` (generated by the build), lazily compiles each with `Handlebars.compile()`
-3. **Create state** — wraps `window.__IGNITION_INITIAL_DATA__` (falling back to `window.__IGNITION_MANIFEST__` for legacy pages) in a reactive proxy
-4. **Run page config** — calls `window.__IGNITION_PAGE_CONFIG__(state, api)`
-5. **Initialize blocks** — finds all `[data-ignition-block]` elements, subscribes to their dependencies, and re-renders when data changes
-6. **Initialize bindings** — finds all `[data-ignition-binding]` elements, sets up two-way binding
-7. **Initialize event handlers** — finds all `[data-ignition-on]` elements, attaches listeners
-
-After boot, `window.__IGNITION_STATE__` holds the reactive state for debugging.
-
-## State
-
-The state is a deep reactive proxy. Any assignment triggers notifications to subscribers.
-
-### Creating State
-
-State is created automatically from `__IGNITION_INITIAL_DATA__`. You do not call `createReactiveState()` directly — it is done by the boot sequence. But the API is:
-
-```js
-import { createReactiveState } from './runtime/state.js';
-
-const state = createReactiveState({
-    count: 0,
-    user: { name: 'Alice' },
-    items: [1, 2, 3]
-});
-```
-
-### How Proxying Works
-
-- Every object in the initial data tree gets wrapped in a `Proxy`
-- Nested objects are wrapped **lazily** — only when accessed via `get`
-- A `WeakMap` ensures the same raw object always returns the same proxy
-- Primitives (strings, numbers, booleans, null) pass through unchanged
-
-```js
-state.user          // proxy wraps { name: 'Alice' }
-state.user.name     // 'Alice' (primitive, no proxy)
-state.user.age = 30 // triggers notify('user.age', undefined, 30)
-```
-
-### Subscriptions
-
-```js
-const unsubscribe = state.subscribe(path, callback);
-```
-
-**`path`** is a dot-separated string. The matching rules are:
-
-| Pattern | Matches |
-|---------|---------|
-| `'user.name'` | Only exact path `user.name` |
-| `'user'` | `user` and anything nested (`user.name`, `user.age`, etc.) |
-| `'*'` | Every change in the entire state |
-
-**`callback(fullPath, oldVal, newVal)`** receives:
-- `fullPath` — the exact path that changed (e.g., `'user.name'`)
-- `oldVal` — previous value
-- `newVal` — new value
-
-**`unsubscribe()`** — call the returned function to stop listening.
-
-```js
-// React to any change under 'user'
-state.subscribe('user', (path, old, val) => {
-    console.log(`${path} changed: ${old} -> ${val}`);
-});
-
-// React to everything
-state.subscribe('*', (path) => {
-    console.log('Something changed:', path);
-});
-
-// Unsubscribe
-const unsub = state.subscribe('count', handler);
-unsub(); // stop listening
-```
-
-### Mutation Tracking
-
-Changes are tracked via the proxy `set` trap:
-
-```js
-state.count = 5           // notify('count', 0, 5)
-state.user.name = 'Bob'   // notify('user.name', 'Alice', 'Bob')
-state.items.push(4)       // notify('items.3', undefined, 4)
-                          // + notify('items.length', 3, 4)
-```
-
-**Identity check**: if the new value is the same reference as the old value, the notification is skipped. This prevents infinite loops when a subscriber re-assigns the same value.
-
-```js
-state.x = state.x   // skipped — same proxy reference
-```
-
-### Re-entrancy Protection
-
-When a subscriber callback modifies state, those notifications are **batched**:
-
-```
-1. state.ui.search = 'book'
-2.   -> notify('ui.search', ...)
-3.     -> subscriber A fires -> state.filtered = recompute()
-4.       -> notify('filtered', ...) -> QUEUED (depth > 0)
-5.     -> subscriber B fires -> ...
-6.   -> done notifying 'ui.search'
-7. Process queue: notify('filtered', ...) -> subscribers fire
-```
-
-Within a single top-level notification cycle, each path is notified **at most once**. This prevents infinite loops when `subscribe('*')` callbacks write back to state.
-
-## Blocks
-
-Blocks are the core rendering mechanism. A block is a DOM element that re-renders its content from a Handlebars template when data changes.
-
-### Declaring Blocks in Templates
-
-The preferred way is the `{{#block}}` helper. The server renders the block partial with the `data` slice and emits a compact manifest:
-
-```handlebars
-{{#block name="catalog/product-list" data="products" depends="filtered"}}
-    <p class="empty">No products</p>
-{{/block}}
-```
-
-This produces HTML like:
-
-```html
-<div data-ignition-block="catalog/product-list"
-     data-ignition-data="products"
-     data-ignition-depends="filtered">
-    <div class="product">...</div>
+<div data-ignition-block="extmob/skills" data-ignition-data="skills" data-ignition-depends="skills">
+  <!-- server-rendered partial -->
 </div>
 ```
 
-| Attribute | Description |
-|-----------|-------------|
-| `name` | Block template name (`layout/partial`) |
-| `data` | State path passed as the template data context |
-| `depends` | Comma-separated paths that trigger re-render |
+**Block name = partial path.** Use `extmob/skills` when configuring renderers or dependencies later.
 
-The block template receives **only the sliced data**, not the full state:
+If you need multiple named slices or an explicit fallback, use the `{{#block}}` helper:
 
 ```handlebars
-{{#each this}}
-    <div class="product">{{name}}</div>
-{{/each}}
+{{#block name="form/skills" data="form.skills, reference.suggestions"}}
+  <p>No skills yet</p>
+{{/block}}
 ```
 
-### Custom Renderers (Fallback)
+Opt out with a comment:
 
-If you need data that cannot be expressed as a simple state slice, use a custom renderer. This is a fallback — the default `data-ignition-data` slicing is the clean primary mechanism.
-
-```js
-window.__IGNITION_PAGE_CONFIG__ = function(state, api) {
-    api.blockOptions.renderers['catalog/product-list'] = function(s) {
-        return s.filteredProducts;
-    };
-};
+```handlebars
+{{!-- ignition: noblock --}}
+{{> extmob/skills skills}}
 ```
 
-### Source Dependencies
+## 4. Auto-Bindings
 
-Sometimes a block depends on paths not mentioned in `data-ignition-depends`. Use `sourceDeps` to add extra subscriptions:
+Form elements bind to state automatically from standard Handlebars patterns:
 
-```js
-api.blockOptions.sourceDeps['catalog/product-list'] = ['products', 'ui'];
+```handlebars
+<input type="text" value="{{candidate.email}}">
+<textarea>{{candidate.description}}</textarea>
 ```
 
-### Block Re-render Cycle
+The engine injects `data-ignition-binding` and the runtime sets up two-way sync. In the common case you never write `data-ignition-binding` manually — the compiler adds it from `value="{{path}}"` (inputs), `{{path}}` textareas, and `{{#if path}}selected{{/if}}` option patterns.
 
-When a dependency changes:
+Two **documented exceptions** where you write `data-ignition-binding` by hand:
 
-1. `render()` is called for the block
-2. The block data is sliced from state (`data-ignition-data`) or produced by a custom renderer
-3. Handlebars compiles the template with the data
-4. `hydrate(block, html)` replaces the block's children
-5. Bindings inside the block are re-initialized
-6. Event handlers inside the block are re-attached
-7. `afterHydrate(block, html)` is called if set
+```handlebars
+<input type="checkbox" data-ignition-binding="candidate.consent" {{#if candidate.consent}}checked{{/if}}>
 
-This means **every re-render creates fresh DOM**. Elements inside a block do not persist across renders. Use `afterHydrate` to restore transient state after each render.
-
-## Bindings
-
-Two-way data binding between form elements and state.
-
-### HTML
-
-```html
-<input type="text" data-ignition-binding="form.fields.name">
-<input type="checkbox" data-ignition-binding="form.consent">
-<select data-ignition-binding="ui.activeCategory">
-    <option value="all">All</option>
+<select data-ignition-binding="candidate.industry">
+  <option value="" {{#unless candidate.industry}}selected{{/unless}} disabled>Выберите отрасль</option>
+  {{#each form.industries}}
+    <option value="{{this}}" {{#if (eq this ../candidate.industry)}}selected{{/if}}>{{this}}</option>
+  {{/each}}
 </select>
-<textarea data-ignition-binding="form.fields.message"></textarea>
 ```
 
-### How It Works
+A checkbox is a boolean attribute, and a `<select>` holds its value on options rather than on `value="..."`, so neither fits the standard `value="{{path}}"` auto-detection — hence the manual attribute. The runtime reads them on `change` and syncs state → element on the same path.
 
-**Element -> State** (user types):
-- `input` event (text inputs, textareas) or `change` event (selects, checkboxes)
-- Text inputs: `setByPath(state, path, element.value)` — value is always a string
-- Checkboxes: `setByPath(state, path, element.checked)` — value is `true`/`false`
+### Boolean attributes (SSR initial state)
 
-**State -> Element** (programmatic change):
-- Subscribes to the exact `path` in state
-- When the value changes, updates `element.value` (text) or `element.checked` (checkbox)
-- Only updates if the value actually changed to avoid cursor jumps
-
-**Initial sync**:
-- On initialization, if the state has a value and the element differs, the element is set to the state value
-
-### Supported Elements
-
-| Element | Event | Value Type | Notes |
-|---------|-------|------------|-------|
-| `<input type="text">` | `input` | `string` | Text, search, email, etc. |
-| `<input type="checkbox">` | `change` | `boolean` | `element.checked` |
-| `<textarea>` | `input` | `string` | |
-| `<select>` | `change` | `string` | Value is the option's `value` attribute |
-
-## Actions
-
-Actions are named functions that mutate state in response to user events.
-
-### Registering Actions
-
-```js
-api.action('cartAdd', function(s, id, price, name) {
-    s.cart.items.push({ id: id, price: price, name: name });
-});
-
-api.action('formSubmit', function(s) {
-    s.form.submitting = true;
-    setTimeout(function() {
-        s.form.submitting = false;
-        s.form.submitted = true;
-    }, 500);
-});
-```
-
-### HTML Syntax
-
-```html
-<button data-ignition-on="click -> cartAdd(1, 99, 'Widget')">Add</button>
-<form data-ignition-on="submit -> formSubmit">
-<button data-ignition-on="click -> cartRemove({{id}})">
-<input data-ignition-on="keydown -> submitSkill()">
-<input data-ignition-on="keyup -> onEscape()">
-```
-
-The format is: `eventName -> actionName(arg1, arg2, ...)`
-
-Any DOM event name is supported: `click`, `submit`, `input`, `change`, `keydown`, `keyup`, `focus`, `blur`, `mouseenter`, etc.
-
-### Argument Parsing
-
-| Syntax | Parsed As |
-|--------|-----------|
-| `42` | `Number(42)` |
-| `'hello'` | `String('hello')` |
-| `"hello"` | `String('hello')` |
-| `someName` | `String('someName')` (unquoted) |
-
-Handlebars expressions inside args are resolved at render time:
-
-```html
-<!-- {{id}} is replaced with the actual value before the attribute exists in DOM -->
-<button data-ignition-on="click -> remove({{id}})">Delete</button>
-```
-
-### Prevent Default
-
-The `submit` event automatically calls `e.preventDefault()`. For other events, handle it inside the action.
-
-### Event Object
-
-Every action receives the DOM event as the last argument:
-
-```js
-api.action('addSkill', function(s, event) {
-    if (event.key !== 'Enter') return;
-    // event.target — the element
-    // event.type — 'keydown', 'click', etc.
-    s.form.skills.push(event.target.value);
-});
-```
-
-The event is always passed, even for actions that don't use it. Existing actions that only read `(s, ...args)` continue to work — JavaScript ignores extra arguments.
-
-### Multiple Event Handlers on One Element
-
-You can attach several handlers to the same element by separating them with a semicolon:
-
-```html
-<div data-ignition-on="click -> loginStub; keydown -> loginStubKey">
-    Press Enter or click to continue
-</div>
-```
-
-Each declaration has the same syntax: `eventName -> actionName(args)`. The DOM event is passed as the last argument to every action automatically — do **not** write `event` in the attribute.
-
-## Class and Attribute Bindings
-
-Declaratively toggle classes and attributes based on state paths. This avoids manual DOM manipulation for common UI states.
-
-### Class Bindings
-
-```html
-<input data-ignition-class="is-invalid: form.errors.email">
-<div data-ignition-class="active: ui.active; hidden: ui.collapsed">
-```
-
-Syntax: `className: pathExpression`. Multiple rules are separated by `;`. The class is added when the value is truthy and removed when falsy. Use `!` to negate:
-
-```html
-<div data-ignition-class="valid: !form.errors.email">
-```
-
-### Attribute Bindings
-
-```html
-<button data-ignition-attr-disabled="!ui.valid">Submit</button>
-<input data-ignition-attr-aria-invalid="form.errors.email">
-```
-
-Syntax: `data-ignition-attr-{attributeName}="pathExpression"`. Boolean properties like `disabled`, `checked`, and `required` are set as properties; other attributes are set as HTML attributes with value `"true"` and removed when falsy. Use `!` to negate the value.
-
-## Computed Values
-
-Computed values are cached derived values that recompute when dependencies change.
-
-### API
-
-```js
-const getter = api.computed(state, 'totalPrice', function(s) {
-    return s.cart.items.reduce((sum, item) => sum + item.price, 0);
-});
-
-// Later:
-getter(); // returns cached value, recomputes if dirty
-```
-
-### How It Works
-
-1. During each recomputation, Ignition tracks which state paths the function actually reads
-2. It subscribes only to those paths — unrelated state changes do **not** mark it dirty
-3. On first access (or explicit `flushDirty()`), it runs `fn(state)` and caches the result
-4. Multiple dirty computeds are flushed together — if computed A reads computed B, B is recomputed first
-
-### When to Use
-
-For simple derived values. For data that needs to reach block templates, prefer declarative `data-ignition-data` slicing or — as a fallback — custom renderers.
-
-## Full Example: Live Catalog
-
-### Data (`input/data/catalog/books.json`)
-
-```json
-{
-    "products": [
-        { "id": 1, "name": "JavaScript Guide", "price": 2500, "category": "books" },
-        { "id": 2, "name": "ThinkPad X1", "price": 150000, "category": "electronics" }
-    ],
-    "ui": { "searchQuery": "", "activeCategory": "all" },
-    "cart": { "items": [] }
-}
-```
-
-### Layout Template (`input/templates/catalog.hbs`)
-
-```html
-<!DOCTYPE html>
-<html>
-<head>
-    <script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js"></script>
-    <script src="/assets/ignition-runtime.js"></script>
-    <script src="/assets/templates.js"></script>
-    <script>
-        window.__IGNITION_MANIFEST__ = {{{manifest}}};
-    </script>
-    <script>
-    window.__IGNITION_PAGE_CONFIG__ = function(state, api) {
-        // 1. Compute filtered products
-        function filterProducts(s) {
-            var items = s.products;
-            if (s.ui.activeCategory !== 'all') {
-                items = items.filter(function(p) {
-                    return p.category === s.ui.activeCategory;
-                });
-            }
-            if (s.ui.searchQuery) {
-                var q = s.ui.searchQuery.toLowerCase();
-                items = items.filter(function(p) {
-                    return p.name.toLowerCase().indexOf(q) !== -1;
-                });
-            }
-            return items;
-        }
-
-        state.filtered = filterProducts(state);
-        state.subscribe('*', function() {
-            state.filtered = filterProducts(state);
-        });
-
-        // 2. Register actions
-        api.action('cartAdd', function(s, id, price, name) {
-            s.cart.items.push({ id: id, price: price, name: name });
-        });
-    };
-    </script>
-</head>
-<body>
-    <input type="search" data-ignition-binding="ui.searchQuery">
-
-    <select data-ignition-binding="ui.activeCategory">
-        <option value="all">All</option>
-        <option value="books">Books</option>
-        <option value="electronics">Electronics</option>
-    </select>
-
-    {{#block name="catalog/product-list" data="filtered" depends="filtered"}}
-        <p>No products found</p>
-    {{/block}}
-
-    {{#block name="catalog/cart-header" data="cart" depends="cart"}}
-        <p>Cart is empty</p>
-    {{/block}}
-</body>
-</html>
-```
-
-### Product List Template (`input/templates/catalog/product-list.hbs`)
+Handlebars interpolation `checked="{{candidate.consent}}"` renders `checked="false"`, but HTML treats the **presence** of the attribute as true — so `{{#if path}}checked{{/if}}` is the *SSR starting point*:
 
 ```handlebars
-{{#each this}}
+<button type="submit" {{#unless ui.isValid}}disabled{{/unless}}>Опубликовать</button>
+```
+
+This only sets the initial disabled state at render time. It does **not** update when `ui.isValid` changes — a non-block button has no re-render. To make a boolean toggle (like submit/disabled) change live, use a point projection instead (§5):
+
+```handlebars
+<button type="submit" data-ignition-attr-disabled="!ui.isValid">Опубликовать</button>
+```
+
+The same rule applies to `selected`, `disabled`, `readonly`, and similar boolean attributes: `{{#if}}`/`{{#unless}}` set the SSR state; `data-ignition-attr-*` react live.
+
+To opt a whole template out of auto-binding injection:
+
+```handlebars
+{{!-- ignition: nobind --}}
+<input value="{{candidate.email}}">
+```
+
+## 5. Point Projections
+
+For elements that only display or toggle, use point projections. They update without re-rendering the whole block.
+
+```handlebars
+<!-- Text projection -->
+<div id="toast" data-ignition-text="ui.toastMessage"></div>
+
+<!-- Class projection -->
+<div id="toast" data-ignition-class="show: ui.toastVisible"></div>
+
+<!-- Attribute/property projection -->
+<button type="submit" data-ignition-attr-disabled="!ui.isValid">Publish</button>
+```
+
+## 6. Controller
+
+The controller is where you attach events and mutate state. Create `input/controllers/{layout}.js`:
+
+```javascript
+// input/controllers/extmob.js
+window.ignition.controller(function(state, api) {
+  document.getElementById('addSkillBtn').addEventListener('click', () => {
+    state.skills.push({ name: 'New skill', level: 1 });
+  });
+
+  document.getElementById('offerForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    console.log(collectData(state));
+  });
+});
+```
+
+The renderer detects the file and injects `<script src="/assets/controllers/{layout}.js">` after `ignition-runtime.js`. The controller runs after the reactive state is ready.
+
+`state` is a deep reactive Proxy. Mutating it re-renders dependent blocks and updates bound elements.
+
+### `api` object
+
+| Property | Description |
+|----------|-------------|
+| `api.registerHelper(name, fn)` | Register a Handlebars helper for client-side re-renders |
+| `api.registerTemplate(name, fn\|source)` | Register or override a client-side template |
+| `api.computed(state, name, fn)` | Create a cached derived value |
+| `api.blockOptions.renderers[name]` | Custom renderer: `fn(state) → data context` for block `name` |
+| `api.blockOptions.sourceDeps[name]` | Extra state paths that trigger re-render of block `name` |
+| `api.blockOptions.afterHydrate` | `fn(blockElement, html)` called after each block render |
+| `api.loadDataset(url)` | Fetch a personalized dataset and merge changes |
+
+### Global helpers
+
+After boot you can also use:
+
+```js
+window.ignition.set('ui.toastMessage', 'Saved');
+window.ignition.ephemeral('ui.toastMessage', 'Saved', 2600);
+window.ignition.loadDataset('/data/catalog/personalized.json');
+```
+
+## 7. Data Modes
+
+The renderer chooses how much data to ship based on what the page uses:
+
+| Page type | What is inlined | Preload full JSON | Why |
+|-----------|----------------|-------------------|-----|
+| Static (no blocks, no bindings, no controller) | Nothing | No | Pure SSR, no runtime |
+| Block-only (`data-ignition-block`) | Compact `__IGNITION_INITIAL_DATA__` with used slices only | No | Fast first paint |
+| Interactive (autobindings, projections, controller) | Full `__IGNITION_INITIAL_DATA__` | Yes | Controller may read any branch |
+| Pagination | Full dataset | Yes | Client may slice any page |
+| Personalized | `__IGNITION_MANIFEST__` (server snapshot) | Yes | `loadDataset()` diffs against manifest |
+
+In practice you do not think about this — the engine decides. The important rule is: **if the page has a controller or bindings, it gets the full dataset.**
+
+## 8. Pagination
+
+Add the system partial to a layout:
+
+```handlebars
+{{> ignition/pagination
+    collection="products"
+    perPage=10
+    pageTemplate="catalog/page"
+    layout=layout
+    dataset=dataset
+}}
+```
+
+Create the page partial:
+
+```handlebars
+<!-- input/templates/catalog/page.hbs -->
+<div class="catalog-grid">
+  {{#each items}}
     <div class="product-card">
-        <h3>{{name}}</h3>
-        <p>{{price}} ₽</p>
-        <button data-ignition-on="click -> cartAdd({{id}}, {{price}}, '{{name}}')">
-            Add to cart
-        </button>
+      <h3>{{name}}</h3>
+      <p>{{price}} $</p>
     </div>
-{{/each}}
-{{#unless this.length}}
-    <p>No products found</p>
-{{/unless}}
+  {{/each}}
+</div>
+
+<nav class="pagination">
+  {{#if pagination.hasPrev}}
+    <a href="{{basePath}}{{pagination.prevPage}}" data-page="{{pagination.prevPage}}">&laquo;</a>
+  {{/if}}
+
+  {{#times pagination.totalPages}}
+    <a href="{{basePath}}{{this}}"
+       class="{{#ifCond this '==' ../pagination.currentPage}}active{{/ifCond}}"
+       data-page="{{this}}">{{this}}</a>
+  {{/times}}
+
+  {{#if pagination.hasNext}}
+    <a href="{{basePath}}{{pagination.nextPage}}" data-page="{{pagination.nextPage}}">&raquo;</a>
+  {{/if}}
+</nav>
 ```
 
-### Cart Header Template (`input/templates/catalog/cart-header.hbs`)
+Pagination pages get `ignition-pagination.js` automatically and use the shared runtime for CSR navigation.
 
-```handlebars
-<p>Items in cart: {{items.length}}</p>
-```
+## 9. Common Patterns
 
-### Data Flow
+### Form validation
 
-```
-User types "jav" in search
-    |
-    v
-binding: setByPath(state, 'ui.searchQuery', 'jav')
-    |
-    v
-notify('ui.searchQuery', '', 'jav')
-    |
-    v
-'*' subscriber: state.filtered = filterProducts(state)
-    |
-    v
-notify('filtered', ...)
-    |
-    v
-Block re-renders: product-list template with the filtered array
-    |
-    v
-DOM updated — one product card shown
-```
-
-## Personalized Datasets
-
-A page can load a different dataset after boot (for example, a personalized catalog) and re-render only the blocks that changed:
+Validate in the controller and write validity to state:
 
 ```js
-window.__IGNITION_PAGE_CONFIG__ = function(state, api) {
-    api.action('loadPersonalized', function(s) {
-        api.loadDataset('/data/catalog/personalized.json');
-    });
+function validate() {
+  const c = state.candidate;
+  state.ui.isValid =
+    c.email.includes('@') &&
+    c.position.trim() !== '' &&
+    state.skills.length > 0;
+}
+
+document.getElementById('offerForm').addEventListener('input', validate);
+validate();
+```
+
+```handlebars
+<button type="submit" data-ignition-attr-disabled="!ui.isValid">Опубликовать</button>
+```
+
+`data-ignition-attr-disabled` (a projection, §5) watches `ui.isValid` and toggles the button live as you type — `{{#unless ui.isValid}}disabled{{/unless}}` alone would only set the initial render state.
+
+### Toast
+
+```js
+function toast(msg) {
+  window.ignition.ephemeral('ui.toastMessage', msg, 2600);
+}
+```
+
+```handlebars
+<div id="toast" data-ignition-text="ui.toastMessage"></div>
+```
+
+### Dynamic lists
+
+Keep the input outside the block, pass only the list into the partial:
+
+```handlebars
+<input id="newSkill" type="text">
+<button id="addSkillBtn" type="button">Add</button>
+{{> skills skills}}
+```
+
+The `skills` partial renders `{{#each this}} ... {{/each}}`. When `state.skills` changes, only the block re-renders.
+
+### Focus inside a block
+
+Blocks replace their `innerHTML` on re-render. Keep focused inputs outside blocks when possible. When focus must live inside, use `afterHydrate`:
+
+```js
+api.blockOptions.afterHydrate = function(block) {
+  if (block._restoreFocus) block._restoreFocus.focus();
 };
 ```
 
-`api.loadDataset(url)` fetches the full dataset, diffs each block's slice against the server manifest, and merges only changed slices into state. Only blocks whose slices changed re-render.
+## 10. What You Do vs What the Engine Does
 
-## Patterns
+| You write | Engine does |
+|-----------|-------------|
+| `{{> extmob/skills skills}}` | Wraps in `<div data-ignition-block="extmob/skills" data-ignition-data="skills" data-ignition-depends="skills">` |
+| `<input value="{{candidate.email}}">` | Injects `data-ignition-binding="candidate.email"` for two-way binding |
+| `<textarea>{{candidate.description}}</textarea>` | Injects `data-ignition-binding="candidate.description"` |
+| `<div data-ignition-text="ui.toastMessage">` | Keeps text content in sync |
+| `input/controllers/extmob.js` | Copies to `/assets/controllers/extmob.js` and injects it |
+| Reactive page detected | Injects `__IGNITION_INITIAL_DATA__`, `__IGNITION_TEMPLATES__`, `ignition-runtime.js`, preload link |
+| Pagination detected | Injects `ignition-pagination.js` |
 
-### Conditional Rendering
+You do **not** add runtime `<script>` tags, `__IGNITION_INITIAL_DATA__`, or `__IGNITION_TEMPLATES__` to your templates.
 
-Use Handlebars conditionals inside block templates. The block re-renders when the condition's data changes:
+---
+
+# Part 2. Deep Dive
+
+Read this section when you need to understand the magic under the hood.
+
+## 11. Page Lifecycle
+
+```
+Template + JSON
+       ↓
+SSR HTML with data-ignition-block regions already filled
+       ↓
+<head> gets preload link to full dataset (interactive pages)
+<body> gets __IGNITION_INITIAL_DATA__, __IGNITION_TEMPLATES__,
+       ignition-runtime.js and /assets/controllers/{layout}.js
+       ↓
+Browser loads runtime
+       ↓
+Runtime builds reactive state from __IGNITION_INITIAL_DATA__
+       ↓
+Runtime runs controllers registered via window.ignition.controller()
+       ↓
+Blocks hydrate, bindings attach, page is alive
+```
+
+The renderer decides whether a page is "live" and injects scripts only when needed.
+
+## 12. When Is the Runtime Injected?
+
+A page is considered live when the template contains any of:
+
+- `{{> ignition/pagination ...}}` — system pagination controller
+- `value="{{path}}"`, `checked="{{path}}"` or similar auto-binding patterns
+- `data-ignition-text`, `data-ignition-class`, `data-ignition-attr-*` projections
+- A controller file at `input/controllers/{layout}.js`
+
+A bare `data-ignition-block` without any of the above is static SSR: the block is server-rendered once and no runtime is shipped.
+
+This decision is made by `needsRuntime()` in `engine/utils/deriveInitialState.js`.
+
+## 13. Auto-Block Internals
+
+When the compiler sees a partial call with a data path:
 
 ```handlebars
-{{#if form.submitted}}
-    <div class="success">Thank you!</div>
-{{else if form.submitting}}
-    <div class="spinner">Sending...</div>
-{{else}}
-    <form data-ignition-on="submit -> formSubmit">
-        <!-- form fields -->
-    </form>
-{{/if}}
+{{> extmob/skills skills}}
 ```
 
-### Async State Updates
+it analyzes the layout template and records `{ partialName: 'extmob/skills', dataPath: 'skills', depends: 'skills' }`.
 
-Actions can use `setTimeout`, `fetch`, etc. Just mutate state when done — blocks will re-render:
+The engine builds a global auto-block map from **all** layout templates (`detectAutoBlocks()` in `engine/core/renderer.js`) to avoid a race condition: concurrent rendering tasks share one global Handlebars registry, so the decision whether a partial is an auto-block must be deterministic regardless of which task registers it first.
 
-```js
-api.action('loadData', function(s) {
-    s.loading = true;
-    fetch('/api/data')
-        .then(r => r.json())
-        .then(data => {
-            s.items = data;
-            s.loading = false;
-        });
-});
-```
-
-### Validation on Blur
-
-Subscribe to DOM events directly in the page config:
-
-```js
-document.addEventListener('focusout', function(e) {
-    if (e.target.matches('[data-ignition-binding]')) {
-        validate(state);  // re-run validation
-    }
-});
-```
-
-### Disabling Buttons Based on State
-
-Use an attribute binding instead of manual DOM queries:
-
-```html
-<button data-ignition-attr-disabled="!ui.valid">Submit</button>
-```
-
-Or, if you need a more complex condition, compute it in the page config:
-
-```js
-state.subscribe('form', function() {
-    state.ui.valid = validate(state.form);
-});
-```
-
-For elements created inside a block, the attribute binding is re-attached after each render automatically.
-
-### Keyboard-driven Actions
-
-Use `keydown`/`keyup` events for keyboard interactions:
-
-```html
-<input data-ignition-on="keydown -> addSkill()">
-```
-
-Check the key inside the action using the event parameter:
-
-```js
-api.action('addSkill', function(s, event) {
-    if (event.key !== 'Enter') return;
-    if (!event.target.value.trim()) return;
-    s.form.skills.push(event.target.value.trim());
-    event.target.value = '';
-});
-```
-
-### Accessing Multiple State Branches Inside a Block
-
-By default a block receives only the slice declared in `data-ignition-data`. When a partial needs more than one branch, you have three options:
-
-1. **Restructure the JSON** so the needed branches are nested under one path:
-
-```json
-{
-  "form": { "skills": [] },
-  "reference": { "skillSuggestions": [] }
-}
-```
-
-becomes:
-
-```json
-{
-  "skillEditor": {
-    "skills": [],
-    "suggestions": []
-  }
-}
-```
-
-Then:
+The partial source is then wrapped server-side:
 
 ```handlebars
-{{#block name="form/skills" data="skillEditor" depends="skillEditor"}}
-```
-
-2. **Use a custom renderer** as a fallback. This disables the compact manifest for the block, so prefer option 1 for production pages:
-
-```js
-api.blockOptions.renderers['form/skills'] = function(s) {
-    return s; // partial receives the whole state
-};
-```
-
-3. **Pass multiple named slices** to the same block:
-
-```handlebars
-{{#block name="form/skills" data="form.skills, reference.skillSuggestions" depends="form.skills, reference.skillSuggestions"}}
+{{#block name="extmob/skills" data="skills" depends="skills"}}
+  <!-- original partial content -->
 {{/block}}
 ```
 
-The partial receives an object:
+The `{{#block}}` helper:
 
-```json
-{
-  "skills": [...],
-  "skillSuggestions": [...]
-}
-```
+1. Resolves the data slice with `deepGet()`.
+2. Checks `hasContent(slice)`.
+3. If the slice has content, renders the registered partial with that slice as context.
+4. If the slice is empty/null/undefined, renders the fallback content (the block body) with the partial's current context.
+5. Emits the `<div data-ignition-block="...">` wrapper.
 
-Aliases are derived from the last path segment. For explicit aliases use `as`:
+The client receives the raw partial source in `__IGNITION_TEMPLATES__` so it can re-render blocks without the server wrapper.
 
-```handlebars
-{{#block name="form/skills" data="form.skills as formSkills, reference.skillSuggestions as refs"}}
-{{/block}}
-```
+## 14. Auto-Binding Internals
 
-The manifest stores all named slices, so `loadDataset()` still diffs and re-renders only changed blocks.
+The build scans the compiled Handlebars output and injects `data-ignition-binding` attributes for known patterns:
 
-4. **Keep the input outside the block** and pass only the dynamic list into the block:
+- `<input ... value="{{path}}">` → `data-ignition-binding="path"`
+- `<textarea>{{path}}</textarea>` → `data-ignition-binding="path"`
+- `<select ...>` with selected option interpolation → bound to the matching state path
 
-```handlebars
-<input data-ignition-binding="newSkill" data-ignition-on="keydown -> addSkill()">
-{{#block name="form/skills" data="form.skills" depends="form.skills"}}
-    <!-- only the list re-renders -->
-{{/block}}
-```
+The runtime then attaches listeners to these elements and syncs them with the reactive state.
 
-This last pattern is the recommended way to build forms: static fields with bindings live outside the block, dynamic collections live inside.
+Because this is a post-processing step on the rendered HTML, avoid unusual quoting or whitespace that would break the pattern. If a binding is missed, you can add `data-ignition-binding="path"` manually.
 
-### Form Reset
+## 15. Controller Boot Timing
 
-`form.reset()` does not synchronize with the reactive state. Reset by assigning defaults in an action:
+Controllers live in separate files that load after `ignition-runtime.js`. To handle the case where a controller evaluates before the runtime has finished booting, the runtime exposes `window.ignition.controller()` immediately:
 
-```js
-api.action('resetForm', function(s) {
-    s.form.email = '';
-    s.form.prefName = '';
-    s.form.skills = [];
-    s.ui.submitted = false;
-});
-```
+- If the state already exists, the callback runs synchronously.
+- If the runtime is still booting, the callback is queued and runs as soon as state is ready.
 
-For larger forms keep the defaults in a constant and merge:
+After boot, `window.ignition.controller()` runs callbacks synchronously.
 
-```js
-var DEFAULTS = { email: '', prefName: '', skills: [] };
-api.action('resetForm', function(s) {
-    Object.assign(s.form, DEFAULTS);
-});
-```
+The runtime requires a global `Handlebars` (used for on-demand template compilation). For live pages the renderer auto-injects the self-hosted `<script src="/assets/handlebars.min.js"></script>` as the first boot tag, so no manual script tags are needed.
 
-### Validation and Error Classes
+## 16. Initial Data Derivation
 
-Keep errors in state next to the form data:
+`engine/utils/deriveInitialState.js` extracts all `data-ignition-*` paths from the rendered HTML and builds the inlined state:
 
-```json
-{
-  "form": {
-    "email": "",
-    "errors": { "email": null }
-  }
-}
-```
+- For block-only pages, only paths referenced by blocks are included.
+- For interactive pages, the full dataset is inlined.
+- `data-ignition-include="path"` can force-include a hidden branch.
 
-Validate on blur or on change, then use class bindings:
+The result is serialized into `__IGNITION_INITIAL_DATA__` safely for inline `<script>` tags.
 
-```html
-<input type="email"
-       data-ignition-binding="form.email"
-       data-ignition-class="is-invalid: form.errors.email"
-       data-ignition-on="blur -> validateEmail()">
-```
+## 17. Personalized Datasets
 
-Disable submit until the form is valid:
-
-```html
-<button data-ignition-attr-disabled="!ui.valid">Submit</button>
-```
+Load a different dataset and re-render only changed blocks:
 
 ```js
-function validate(form) {
-    var errors = {};
-    if (!form.email) errors.email = 'Required';
-    return errors;
-}
-
-state.subscribe('form', function() {
-    var errors = validate(state.form);
-    state.form.errors = errors;
-    state.ui.valid = Object.keys(errors).length === 0;
-});
+window.ignition.loadDataset('/data/catalog/personalized.json');
 ```
 
-### Toast / Transient UI
+The runtime diffs the new dataset against `__IGNITION_MANIFEST__` and re-renders only the blocks whose data changed.
 
-Toast state lives in the data model like any other UI state:
-
-```json
-{
-  "ui": {
-    "toastMessage": null,
-    "toastVisible": false
-  }
-}
-```
-
-Render the toast outside any frequently re-rendering block:
-
-```handlebars
-{{#block name="ui/toast" data="ui" depends="ui.toastVisible"}}
-    {{#if toastVisible}}
-        <div class="toast">{{toastMessage}}</div>
-    {{/if}}
-{{/block}}
-```
-
-Show and hide from an action:
-
-```js
-api.action('showToast', function(s, message) {
-    s.ui.toastMessage = message;
-    s.ui.toastVisible = true;
-    setTimeout(function() {
-        s.ui.toastVisible = false;
-    }, 3000);
-});
-```
-
-### Select Placeholder
-
-There is no class-binding for `<option>`. Use CSS on the `<select>`:
-
-```css
-select:required:invalid {
-    color: #999;
-}
-option {
-    color: #000;
-}
-```
-
-```html
-<select required data-ignition-binding="form.country">
-    <option value="" disabled selected>Choose country</option>
-    <option value="ru">Russia</option>
-    <option value="kz">Kazakhstan</option>
-</select>
-```
-
-The `select:required:invalid` selector styles the placeholder while no value is selected.
-
-### Focus Inside a Block
-
-Because a block replaces its innerHTML on re-render, focus inside the block is lost. Keep the focused input **outside** the block whenever possible:
-
-```handlebars
-<!-- input lives outside the block, keeps focus -->
-<input data-ignition-binding="ui.searchQuery" data-ignition-on="input -> filter()">
-
-<!-- only the results re-render -->
-{{#block name="catalog/product-list" data="filtered" depends="filtered"}}
-    ...
-{{/block}}
-```
-
-When focus must live inside a block, use `afterHydrate` to restore it:
-
-```js
-api.blockOptions.afterHydrate = function(block, html) {
-    var active = document.activeElement;
-    if (active && block.contains(active) && active.dataset.restoreFocus) {
-        active.focus();
-    }
-};
-```
-
-Mark the input inside the block:
-
-```html
-<input data-ignition-binding="form.skills.{{@index}}.name" data-restore-focus>
-```
-
-## Common Pitfalls
-
-### 1. Subscribing to `*` and writing back to state
-
-If your `*` subscriber writes to state, the re-entrancy protection will **deduplicate** notifications within one cycle. This means some subscribers might not fire if the path was already notified. This is by design — it prevents infinite loops.
-
-```js
-// Works: the system deduplicates 'filtered' notifications
-state.subscribe('*', function() {
-    state.filtered = recompute(state);
-});
-```
-
-### 2. Block templates must match the data slice shape
-
-If the block uses `data="cart"`, the template receives the `cart` object:
-
-```handlebars
-{{!-- Correct: items is at the top level of the data context --}}
-{{#each items}}...{{/each}}
-
-{{!-- Wrong: there's no 'cart' in the data context --}}
-{{#each cart.items}}...{{/each}}
-```
-
-### 3. Bindings don't survive block re-renders automatically
-
-When a block re-renders, its innerHTML is replaced. Bindings and event handlers are automatically re-attached by the runtime. But if you manually manipulate DOM inside a block, it will be lost on re-render.
-
-### 4. Initial button state
-
-If you set `btn.disabled` during page config (before blocks render), the button doesn't exist yet. Use `setTimeout(fn, 0)` to defer it:
-
-```js
-setTimeout(updateButton, 0);  // runs after initBlocks
-```
-
-### 5. `data-ignition-depends` vs `sourceDeps`
-
-- `data-ignition-depends` declares what paths trigger a re-render (the block's "subscriptions")
-- `sourceDeps` adds extra paths for a specific block (for computed data that depends on more paths than declared)
-
-If a block renders `filtered` but `filtered` is computed from `products` + `ui`, you need:
-
-```handlebars
-{{#block name="catalog/product-list" data="filtered" depends="filtered"}}
-```
-```js
-api.blockOptions.sourceDeps['catalog/product-list'] = ['products', 'ui'];
-```
-
-Without `sourceDeps`, changing `ui.searchQuery` wouldn't re-render this block because the block only subscribes to `filtered`, and the `*` subscriber handles the `ui` -> `filtered` link. But `sourceDeps` ensures the block also re-renders directly when `products` or `ui` change.
-
-### 6. Inputs inside frequently re-rendering blocks lose focus
-
-A block replaces its entire innerHTML on re-render. If a focused input lives inside the block, it is destroyed and recreated, and focus is lost. Keep the input **outside** the block, or use `afterHydrate` to restore focus when absolutely necessary. See the "Focus Inside a Block" pattern above.
-
-## API Reference
-
-### `state.subscribe(path, callback) -> unsubscribe`
-
-Subscribe to changes at a path. Returns an unsubscribe function.
-
-### `api.blockOptions.renderers[name] = fn(state) -> data`
-
-Register a custom renderer for a block. The returned object is passed as the template data context. Use only when `data-ignition-data` slicing is not enough.
-
-### `api.blockOptions.sourceDeps[name] = [paths]`
-
-Add extra subscription paths for a block beyond what `data-ignition-depends` declares.
-
-### `api.action(name, fn(state, ...args, event))`
-
-Register a named action. The DOM event is always passed as the last argument.
-
-### `api.computed(state, name, fn) -> getter`
-
-Create a cached derived value. Returns a getter function.
-
-### `api.registerTemplate(name, fnOrSource)`
-
-Register a Handlebars template. Used internally by the boot sequence.
-
-### `api.registerHelper(name, fn)`
-
-Register a custom Handlebars helper for use in block templates. The helper is available in all templates rendered after registration.
-
-```js
-window.__IGNITION_PAGE_CONFIG__ = function(state, api) {
-    api.registerHelper('starFill', function(level, starNum) {
-        if (level >= starNum) return 100;
-        if (level >= starNum - 0.5) return 50;
-        return 0;
-    });
-};
-```
-
-```handlebars
-<span class="star-fill" style="width:{{starFill level this}}%"></span>
-```
-
-### `api.blockOptions.afterHydrate = function(block, html)`
-
-Callback invoked after each block render (initial and re-renders). Use it to restore transient DOM state (focus, scroll, hover previews) that gets destroyed by innerHTML replacement.
-
-```js
-api.blockOptions.afterHydrate = function(block, html) {
-    // Restore focus to the last focused input inside this block
-    if (block._lastFocused) {
-        block._lastFocused.focus();
-    }
-};
-
-// Track which input had focus before re-render
-block.addEventListener('focusin', function(e) {
-    block._lastFocused = e.target;
-});
-```
-
-### `api.loadDataset(url)`
-
-Fetch a personalized dataset, diff it against the server manifest, and merge only changed slices into state. Only affected blocks re-render.
-
-### HTML Attributes
+## 18. HTML Attributes Reference
 
 | Attribute | Element | Description |
 |-----------|---------|-------------|
-| `data-ignition-block="name"` | Any | Marks this element as a reactive block |
-| `data-ignition-data="path"` | Block | State path passed as the block template data context. Multiple paths: `data-ignition-data="products, categories"` |
-| `data-ignition-depends="a, b"` | Block | Comma-separated dependency paths |
-| `data-ignition-binding="path"` | Input/Select/Textarea | Two-way binding to state path |
-| `data-ignition-on="event -> action(args)"` | Any | Event handler declaration. Multiple handlers: `click -> a(); keydown -> b()` |
-| `data-ignition-class="class: path"` | Any | Toggle class based on state path. Multiple: `class1: path1; class2: path2`. Use `!` to negate |
-| `data-ignition-attr-{name}="path"` | Any | Toggle attribute/property based on state path. Use `!` to negate |
+| `data-ignition-block="name"` | Any | Reactive block (auto-generated from `{{> partial path}}`) |
+| `data-ignition-data="path"` | Block | State path for block context |
+| `data-ignition-depends="a, b"` | Block | Subscription paths (defaults to `data`) |
+| `data-ignition-binding="path"` | Form element | Two-way binding (auto-generated from `value="{{path}}"`, etc.) |
+| `data-ignition-text="path"` | Any | Text content projection |
+| `data-ignition-class="class: path"` | Any | Class toggle. Multiple rules with `;`. Use `!` to negate |
+| `data-ignition-attr-{name}="path"` | Any | Attribute/property toggle. Use `!` to negate |
+| `data-ignition-include="path"` | `<meta>` | Force-include a state branch in compact initial data |
 
-### Dynamic Select Options
+There is no `data-ignition-on` in user templates. The controller handles events via native `addEventListener`.
 
-For dynamic options, use `{{#each}}` inside a block. No special mechanism needed — blocks re-render when dependencies change, so options update automatically:
+## 19. API Reference
 
-```handlebars
-{{#block name="form/industries" data="reference" depends="reference"}}
-    <select data-ignition-binding="form.industry">
-        <option value="" disabled selected>Choose...</option>
-        {{#each this.industries}}
-            <option value="{{this}}">{{this}}</option>
-        {{/each}}
-    </select>
-{{/block}}
-```
+### `state.subscribe(path, callback)`
+Subscribe to changes at a path.
 
-When `reference.industries` changes in state, the block re-renders and the select gets fresh options. The `data-ignition-binding` on the select stays in sync with state.
+### `state.set(path, value)`
+Set a nested value by dot-separated path.
 
-For static options (known at build time), put them directly in the template without a block:
+### `window.ignition.set(path, value)`
+Global `state.set`.
 
-```html
-<select data-ignition-binding="form.country">
-    <option value="ru">Russia</option>
-    <option value="kz">Kazakhstan</option>
-</select>
-```
+### `window.ignition.ephemeral(path, value, ttl)`
+Set a value that becomes `null` after `ttl` ms.
+
+### `api.blockOptions.renderers[name] = fn(state)`
+Custom renderer for a block.
+
+### `api.blockOptions.sourceDeps[name] = [paths]`
+Extra subscription paths for a block.
+
+### `api.blockOptions.afterHydrate = fn(block, html)`
+Called after each block render.
+
+### `api.computed(state, name, fn)`
+Create a cached derived value.
+
+### `api.registerHelper(name, fn)`
+Register a Handlebars helper.
+
+### `api.registerTemplate(name, fnOrSource)`
+Register a client-side template.
+
+### `api.loadDataset(url)` / `window.ignition.loadDataset(url)`
+Fetch a personalized dataset and merge changes.
+
+## 20. File Reference
+
+- `engine/core/renderer.js` — SSR, auto-block wrapping, script injection
+- `engine/core/compiler.js` — template analysis, auto-binding/projection injection
+- `engine/core/helpers.js` — canonical Handlebars helpers (server + client)
+- `engine/utils/deriveInitialState.js` — `needsRuntime()`, initial data derivation
+- `engine/core/runtime/*` — client-side reactivity modules
+- `scripts/build-runtime.js` — builds the client IIFE bundle

@@ -16,27 +16,137 @@ import {
 } from './handlebars.js';
 import { paginateCollection, preparePageData } from './pagination.js';
 import { resetManifest, getManifest } from './helpers.js';
-import { deriveInitialState } from '../utils/deriveInitialState.js';
-import { analyzeTemplate } from './compiler.js';
+import { deriveInitialState, needsRuntime } from '../utils/deriveInitialState.js';
+import { analyzeTemplate, applyAutobindings, applyProjections } from './compiler.js';
 import config from '../config/default.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-function hasIgnitionAttributes(html) {
-  return /data-ignition-(block|data|depends|binding|on|class|attr-)/.test(html);
-}
 
 function buildDataUrl(layout, dataset) {
   return `/data/${layout}/${dataset}.json`;
 }
 
-function injectDataPreload(html, layout, dataset) {
-  if (!hasIgnitionAttributes(html)) return html;
+function injectDataPreload(html, layout, dataset, live = false) {
+  if (!live) return html;
   const dataUrl = buildDataUrl(layout, dataset);
   const link = `<link rel="preload" href="${dataUrl}" as="fetch" crossorigin="anonymous">`;
   const headClose = html.indexOf('</head>');
   if (headClose === -1) return link + html;
   return html.slice(0, headClose) + link + html.slice(headClose);
+}
+
+/**
+ * Escape a JSON string for safe inlining into a <script> tag.
+ */
+function jsonSafe(obj) {
+  return JSON.stringify(obj)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/'/g, '\\u0027');
+}
+
+/**
+ * Auto-inject the client-side boot: initial state, registered templates and the
+ * reactivity runtime. This lets the developer declare reactivity declaratively
+ * (pagination, bindings, a controller) without writing runtime <script> tags by
+ * hand. Templates that already embed the scripts are left untouched.
+ *
+ * @param {string} html - Rendered page HTML
+ * @param {{initialData: object, templates: object}} payload - Boot data
+ * @param {boolean} gate - Whether the page needs the runtime at all
+ * @param {boolean} isPagination - Whether the page is a real pagination page
+ */
+function injectClientBoot(html, payload, gate, isPagination = false) {
+  if (!gate) return html;
+
+  const insert = (h, tags) => {
+    const bodyClose = h.lastIndexOf('</body>');
+    const block = '\n' + tags.join('\n') + '\n';
+    if (bodyClose === -1) return h + block;
+    return h.slice(0, bodyClose) + block + h.slice(bodyClose);
+  };
+
+  // Reactive boot (state + templates + runtime). Live pages re-render blocks
+  // client-side, which needs the Handlebars compiler — provided self-hosted by
+  // the engine so the developer never writes a manual <script> tag.
+  if (payload && !/ignition-runtime\.js/.test(html) && !/__IGNITION_INITIAL_DATA__/.test(html)) {
+    html = insert(html, [
+      `<script src="/assets/handlebars.min.js"></script>`,
+      `<script>window.__IGNITION_INITIAL_DATA__ = ${jsonSafe(payload.initialData)};</script>`,
+      `<script>window.__IGNITION_TEMPLATES__ = ${jsonSafe(payload.templates)};</script>`,
+      `<script src="/assets/ignition-runtime.js"></script>`
+    ]);
+  }
+
+  // System mini-controller: a real pagination page needs its script too.
+  // (Gated on the layout actually declaring {{> ignition/pagination}}, not on a
+  // raw substring — that would false-positive on the pagination.hbs source that
+  // ships inside __IGNITION_TEMPLATES__ of unrelated reactive pages.)
+  if (isPagination && !/ignition-pagination\.js/.test(html)) {
+    html = insert(html, [`<script src="/assets/ignition-pagination.js" defer></script>`]);
+  }
+
+  return html;
+}
+
+/**
+ * Whether an external controller exists for this layout/dataset. Presence of a
+ * controller means "someone can change the model" → the page needs the runtime.
+ */
+async function hasController(layout, dataset) {
+  const controllersDir = config.source.controllers;
+  const candidates = [
+    path.join(controllersDir, `${layout}.js`),
+    path.join(controllersDir, layout, `${dataset}.js`)
+  ];
+  for (const c of candidates) {
+    try {
+      await fs.access(c);
+      return true;
+    } catch (_) { /* next */ }
+  }
+  return false;
+}
+
+/**
+ * Auto-inject the external page controller: the "someone who changes the model".
+ * The renderer looks for input/controllers/{layout}.js (or {layout}/{dataset}.js),
+ * copies it into output/assets/controllers/ and links it on the page. A controller
+ * is an explicit declaration that the page is alive → it also forces the runtime.
+ *
+ * @param {string} html   - Rendered page HTML
+ * @param {string} layout - Layout name
+ * @param {string} dataset- Dataset name
+ */
+async function injectController(html, layout, dataset, outputDir) {
+  const controllersDir = config.source.controllers;
+  const candidates = [
+    path.join(controllersDir, `${layout}.js`),
+    path.join(controllersDir, layout, `${dataset}.js`)
+  ];
+
+  let found = null;
+  for (const c of candidates) {
+    try {
+      await fs.access(c);
+      found = c;
+      break;
+    } catch (_) { /* not found, try next */ }
+  }
+  if (!found) return html;
+
+  const destDir = path.join(config.output.assets, 'controllers');
+  const dest = path.join(destDir, path.basename(found));
+  await safeMkdir(destDir);
+  await fs.copyFile(found, dest);
+
+  const tag = `<script src="/assets/controllers/${path.basename(dest)}"></script>`;
+  if (html.includes(tag)) return html;
+
+  const bodyClose = html.lastIndexOf('</body>');
+  if (bodyClose === -1) return html + '\n' + tag;
+  return html.slice(0, bodyClose) + '\n' + tag + '\n' + html.slice(bodyClose);
 }
 
 /**
@@ -87,11 +197,17 @@ export async function renderTemplate(templatePath, data, outputDir, dataset, lay
         // 3. Detect pagination
         const paginationConfig = detectPaginationInTemplate(templateContent);
 
-        // 4. Read and register ALL partials from templates
-        await registerAllTemplatePartials(config.source.templates, analysis);
+        // 4. Read and register ALL partials from templates (also collect raw sources before Handlebars compiles them)
+        const templateSources = await registerAllTemplatePartials(config.source.templates, analysis);
 
-        // 5. Compile template
-        const template = Handlebars.compile(templateContent);
+        // 5. Apply v2 autobinding transformations
+        const transformedContent = applyAutobindings(templateContent);
+
+        // 5b. Auto-generate point-projection reflection (data-ignition-text)
+        const projectedContent = applyProjections(transformedContent);
+
+        // 6. Compile template
+        const template = Handlebars.compile(projectedContent);
 
         // 6. Process pagination
         if (paginationConfig.enabled) {
@@ -101,7 +217,8 @@ export async function renderTemplate(templatePath, data, outputDir, dataset, lay
                 data,
                 outputDir,
                 dataset,
-                layout
+                layout,
+                templateSources
             );
         } else {
             // Regular rendering
@@ -109,23 +226,39 @@ export async function renderTemplate(templatePath, data, outputDir, dataset, lay
             resetManifest();
             const html = template({
                 ...data,
+                layout,
+                dataset,
                 initialData: 'IGNITION_INITIAL_DATA_PLACEHOLDER__',
-                manifest: 'IGNITION_MANIFEST_PLACEHOLDER__'
+                manifest: 'IGNITION_MANIFEST_PLACEHOLDER__',
+                templates: 'IGNITION_TEMPLATES_PLACEHOLDER__'
             });
             
             // Inject reflection attributes for auto-blocks
             let finalHtml = injectReflection(html, analysis, layout);
             
             const renderedManifest = JSON.stringify(getManifest());
-            const derivedInitialData = JSON.stringify(deriveInitialState(finalHtml, pureData, analysis))
-                .replace(/</g, '\\u003c')
-                .replace(/>/g, '\\u003e')
-                .replace(/&/g, '\\u0026')
-                .replace(/'/g, '\\u0027');
+            const derivedInitialData = jsonSafe(deriveInitialState(finalHtml, pureData, analysis));
+            const templatesJson = jsonSafe(templateSources);
             finalHtml = finalHtml
                 .split('IGNITION_INITIAL_DATA_PLACEHOLDER__').join(derivedInitialData)
-                .split('IGNITION_MANIFEST_PLACEHOLDER__').join(renderedManifest);
-            finalHtml = injectDataPreload(finalHtml, layout, dataset);
+                .split('IGNITION_MANIFEST_PLACEHOLDER__').join(renderedManifest)
+                .split('IGNITION_TEMPLATES_PLACEHOLDER__').join(templatesJson)
+                .split('"__IGNITION_TEMPLATES__": null').join('"__IGNITION_TEMPLATES__": ' + templatesJson);
+            // v2: preload the full dataset only for live (interactive) pages —
+            // a page that no one can change doesn't need the data fetched early.
+            const liveController = await hasController(layout, dataset);
+            const liveRuntime = needsRuntime(finalHtml, analysis);
+            const live = liveRuntime || liveController;
+            logger.debug(`[ignition] Page ${dataset}.html — liveness: ${live ? 'live → runtime+preload injected' : 'static → runtime omitted'} (detected runtime: ${liveRuntime}, external controller: ${liveController})`);
+            finalHtml = injectDataPreload(finalHtml, layout, dataset, live);
+            // v2: auto-inject the runtime when the page is reactive, so the
+            // developer does not hand-write the runtime <script> tags.
+            finalHtml = injectClientBoot(finalHtml, {
+                initialData: deriveInitialState(finalHtml, pureData, analysis),
+                templates: templateSources
+            }, live, paginationConfig.enabled);
+            // External controller (explicit "live page" declaration).
+            finalHtml = await injectController(finalHtml, layout, dataset, outputDir);
             const outputPath = path.join(outputDir, `${dataset}.html`);
             await safeMkdir(path.dirname(outputPath));
             await atomicWrite(outputPath, finalHtml);
@@ -147,8 +280,40 @@ export async function renderTemplate(templatePath, data, outputDir, dataset, lay
     }
 }
 
+let autoBlockCache = new Map();
+
+/**
+ * Compute the set of auto-block partials deterministically across EVERY layout.
+ * A partial used as `{{> some/partial <data>}}` in any layout becomes an
+ * auto-block. Everything is decided globally (scanned once and cached) so that
+ * concurrent rendering tasks all register the same partials the same way — the
+ * per-layout analysis based decision is racy on the shared global Handlebars.
+ *
+ * @returns {Promise<Map<string, {dataPath: string, depends: string}>>}
+ */
+async function detectAutoBlocks(templatesDir) {
+    if (autoBlockCache.has(templatesDir)) return autoBlockCache.get(templatesDir);
+    const map = new Map();
+    const templateDirs = await fs.readdir(templatesDir, { withFileTypes: true });
+    for (const entry of templateDirs) {
+        if (!entry.isFile() || !entry.name.endsWith('.hbs')) continue;
+        const src = await fs.readFile(path.join(templatesDir, entry.name), 'utf8');
+        const a = analyzeTemplate(src);
+        if (a.hasNoblock) continue;
+        for (const p of a.partials) {
+            if (!map.has(p.partialName)) {
+                map.set(p.partialName, { dataPath: p.dataPath, depends: p.depends });
+            }
+        }
+    }
+    autoBlockCache.set(templatesDir, map);
+    return map;
+}
+
 async function registerAllTemplatePartials(templatesDir, analysis = null) {
+    const sources = {};
     try {
+        const autoBlocks = await detectAutoBlocks(templatesDir);
         const templateDirs = await fs.readdir(templatesDir, { withFileTypes: true });
 
         for (const dir of templateDirs) {
@@ -161,22 +326,26 @@ async function registerAllTemplatePartials(templatesDir, analysis = null) {
                         const partialName = path.basename(file.name, '.hbs');
                         const fullName = `${dir.name}/${partialName}`;
                         const content = await fs.readFile(path.join(partialsDir, file.name), 'utf8');
-                        
-                        // Check if this partial should be auto-wrapped
-                        const partialAnalysis = analysis?.partials?.find(p => p.partialName === fullName);
-                        
-                        if (partialAnalysis && !analysis.hasNoblock) {
-                            // Wrap partial with reflection attributes
+                        const transformedContent = applyAutobindings(content);
+
+                        // Deterministic auto-block decision (global, not per-task)
+                        const autoBlock = autoBlocks.get(fullName);
+
+                        if (autoBlock) {
+                            // Wrap partial with reflection attributes for SSR block rendering
                             const wrappedContent = wrapPartialWithReflection(
-                                content, 
-                                fullName, 
-                                partialAnalysis.dataPath, 
-                                partialAnalysis.depends
+                                transformedContent,
+                                fullName,
+                                autoBlock.dataPath,
+                                autoBlock.depends
                             );
                             Handlebars.registerPartial(fullName, wrappedContent);
+                            // Client re-render uses the raw partial source (without the SSR wrapper)
+                            sources[fullName] = transformedContent;
                             logger.debug(`✅ Registered auto-block partial: ${fullName}`);
                         } else {
-                            Handlebars.registerPartial(fullName, content);
+                            Handlebars.registerPartial(fullName, transformedContent);
+                            sources[fullName] = transformedContent;
                             logger.debug(`✅ Registered partial: ${fullName}`);
                         }
                     }
@@ -188,6 +357,7 @@ async function registerAllTemplatePartials(templatesDir, analysis = null) {
             logger.error('❌ Failed to register template partials', { error: err.message });
         }
     }
+    return sources;
 }
 
 async function copyCsrTemplate(layout, pageTemplate) {
@@ -216,7 +386,7 @@ async function copyCsrTemplate(layout, pageTemplate) {
 /**
  * Process pagination with correct context
  */
-async function handlePagination(config, template, data, outputDir, dataset, layout) {
+async function handlePagination(config, template, data, outputDir, dataset, layout, templateSources) {
     const pages = paginateCollection(data, config.collection, config.perPage);
 
     for (const page of pages) {
@@ -239,9 +409,19 @@ async function handlePagination(config, template, data, outputDir, dataset, layo
         };
 
         const html = template(pageData);
+        let pageFile = injectDataPreload(html, layout, dataset, true);
+        // v2: pagination is a system mini-controller — it changes the page in
+        // the model, so it needs the runtime. Auto-inject full dataset (so the
+        // client can slice the whole collection) + registered templates.
+        let pageHtml = injectClientBoot(pageFile, {
+            initialData: data,
+            templates: templateSources
+        }, true, true);
+        // External controller (explicit "live page" declaration).
+        pageHtml = await injectController(pageHtml, layout, dataset, outputDir);
         const pagePath = path.join(outputDir, dataset, 'page', `${page.pageNumber}.html`);
         await safeMkdir(path.dirname(pagePath));
-        await atomicWrite(pagePath, injectDataPreload(html, layout, dataset));
+        await atomicWrite(pagePath, pageHtml);
     }
 }
 

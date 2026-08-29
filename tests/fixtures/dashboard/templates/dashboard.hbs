@@ -5,57 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Тест: Дашборд</title>
 
-    <script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js"></script>
-    <script src="/assets/ignition-runtime.js"></script>
-    <script src="/assets/templates.js"></script>
-    <script>
-        window.__IGNITION_INITIAL_DATA__ = {{{initialData}}};
-    </script>
-    <script>
-    window.__IGNITION_PAGE_CONFIG__ = function(state, api) {
-        function recomputeAll(s) {
-            var sales = s.metrics.sales;
-            var total = 0;
-            for (var i = 0; i < sales.length; i++) total += sales[i].amount;
-            s.totalSales = total;
-            s.avgSales = sales.length ? Math.round(total / sales.length) : 0;
-            var best = null;
-            for (var i = 0; i < sales.length; i++) {
-                if (!best || sales[i].amount > best.amount) best = sales[i];
-            }
-            s.bestDay = best || { date: '-', amount: 0 };
-            s.filteredSales = sales;
-        }
-        recomputeAll(state);
-        state.subscribe('*', function() { recomputeAll(state); });
-
-        api.blockOptions.renderers['dashboard/summary'] = function(s) {
-            return { metrics: s.metrics, totalSales: s.totalSales, avgSales: s.avgSales };
-        };
-        api.blockOptions.renderers['dashboard/sales-list'] = function(s) {
-            return { metrics: s.metrics, filteredSales: s.filteredSales };
-        };
-        api.blockOptions.renderers['dashboard/best-day'] = function(s) {
-            return { metrics: s.metrics, bestDay: s.bestDay };
-        };
-        api.blockOptions.renderers['dashboard/footer'] = function(s) {
-            return { metrics: s.metrics, totalSales: s.totalSales, bestDay: s.bestDay };
-        };
-
-        api.action('metricsRefresh', function(s) {
-            s.metrics.loading = true;
-            setTimeout(function() {
-                s.metrics.sales = [
-                    { date: '2026-08-04', amount: 12000 },
-                    { date: '2026-08-05', amount: 19000 },
-                    { date: '2026-08-06', amount: 15000 }
-                ];
-                s.metrics.loading = false;
-            }, 100);
-        });
-    };
-    </script>
-
     <style>
         body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
         .controls { margin-bottom: 1rem; }
@@ -75,32 +24,24 @@
     <h1>Дашборд (тест реактивности)</h1>
 
     <div class="controls">
-        <button data-ignition-on="click → metricsRefresh">Обновить данные</button>
-        <select data-ignition-binding="ui.period">
+        <button id="refreshBtn">Обновить данные</button>
+        <select id="periodSelect" value="{{ui.period}}">
             <option value="week">Неделя</option>
             <option value="month">Месяц</option>
         </select>
     </div>
 
     {{!-- Виджет 1: общая сводка — зависит от computed --}}
-    <div data-ignition-block="dashboard/summary"
-         data-ignition-depends="totalSales, avgSales">
-    </div>
+    {{#block name="summary" depends="totalSales, avgSales"}}{{/block}}
 
     {{!-- Виджет 2: список продаж — зависит от filteredSales --}}
-    <div data-ignition-block="dashboard/sales-list"
-         data-ignition-depends="filteredSales">
-    </div>
+    {{#block name="sales-list" depends="filteredSales"}}{{/block}}
 
     {{!-- Виджет 3: топ-день — зависит от bestDay --}}
-    <div data-ignition-block="dashboard/best-day"
-         data-ignition-depends="bestDay">
-    </div>
+    {{#block name="best-day" depends="bestDay"}}{{/block}}
 
     {{!-- Виджет 4: мини-сводка внизу — зависит от всех computed --}}
-    <div data-ignition-block="dashboard/footer"
-         data-ignition-depends="totalSales, bestDay">
-    </div>
+    {{#block name="footer" depends="totalSales, bestDay"}}{{/block}}
 
 </body>
 </html>

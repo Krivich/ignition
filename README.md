@@ -161,12 +161,16 @@ my-project/
 │   │   ├── catalog.hbs           # Layout
 │   │   ├── catalog/
 │   │   │   └── page.hbs          # Pagination partial
-│   │   ├── demo.hbs              # Reactive blocks demo
-│   │   └── demo/
-│   │       └── product-list.hbs  # Block partial
+│   │   ├── extmob.hbs            # Reactive form demo
+│   │   ├── extmob/
+│   │   │   └── skills.hbs        # Block partial
+│   │   └── controllers/
+│   │       └── extmob.js         # Page controller (auto-injected)
 │   └── data/
-│       └── catalog/
-│           └── books.json        # Data
+│       ├── catalog/
+│       │   └── books.json        # Data
+│       └── extmob/
+│           └── recommend.json    # Data
 ├── output/public/                # Generated automatically
 └── logs/
 ```
@@ -179,9 +183,6 @@ my-project/
 <head>
     <meta charset="UTF-8">
     <title>{{title}}</title>
-    <script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js"></script>
-    <script src="/assets/ignition-runtime.js"></script>
-    <script src="/assets/templates.js"></script>
 </head>
 <body>
     <h1>{{title}}</h1>
@@ -196,6 +197,8 @@ my-project/
 </body>
 </html>
 ```
+
+The renderer auto-injects `ignition-runtime.js`, `ignition-pagination.js`, `__IGNITION_INITIAL_DATA__`, and `__IGNITION_TEMPLATES__` for paginated pages. No manual `<script>` tags are required.
 
 ### 4. Page Partial (input/templates/catalog/page.hbs)
 

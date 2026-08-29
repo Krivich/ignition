@@ -6,6 +6,8 @@
 
 Ignition is **not a framework** and **contains no business logic**. It is a "dumb renderer" that does one thing and does it well.
 
+> For human-readable framework documentation, see **[REACTIVITY.md](REACTIVITY.md)** (one file: everyday guide + deep dive) and **[QUICKSTART.md](QUICKSTART.md)** (short linear start).
+
 ## Philosophy
 
 **"Write, debug, and forget"**
@@ -25,158 +27,48 @@ View     = Handlebars templates (input/templates/)
 Controller = EXTERNAL process (not part of Ignition)
 ```
 
-External controller is responsible for:
-- Generating/updating JSON files in `input/data/`
-- Business logic before rendering
-- CMS/API integration
-- Data localization
-- Deployment
+The external controller generates/updates JSON files in `input/data/`. Ignition only renders. The watcher (chokidar) monitors `input/data/` and auto-rebuilds on changes.
 
-Ignition is only responsible for rendering. The watcher (chokidar) monitors `input/data/` and automatically picks up any JSON changes — no need to restart the build manually.
+For page-level client-side interactivity, developers put logic in `input/controllers/{layout}.js` and call `window.ignition.controller(function(state, api) { ... })`. See [REACTIVITY.md §6](REACTIVITY.md#6-controller).
 
-### Hybrid SSR/CSR Reactivity
+### Hybrid SSR/CSR
 
-Ignition uses a hybrid architecture:
-
-1. **Server**: renders JSON + Handlebars → HTML with `data-ignition-block` regions **already filled** with server-rendered content (via the `{{#block}}` helper), plus an automatically derived initial state
-2. **Client**: `ignition-runtime.js` attaches reactive state to existing DOM, blocks re-render on data changes
-
-```
-Server:  JSON + Template → HTML (pre-rendered block content + derived initial state)
-Client:  HTML → Reactive State → Blocks re-render on data changes
-```
-
-#### SSR blocks (`{{#block}}` + derived state)
-
-A reactive block is declared **declaratively in the template** with the `{{#block}}` helper, never in custom JS:
-
-```hbs
-<section>
-    {{#block name="demo/product-list" data="products, categories" depends="filtered"}}
-        <p class="empty">Нет товаров</p>
-    {{/block}}
-</section>
-```
-
-During the SSR pass the server:
-- renders the block partial (`demo/product-list.hbs`) with the requested data slice(s), filling the region in HTML;
-- derives and records the initial state in `__IGNITION_INITIAL_DATA__`. For pure block pages it is compact (only the used slices); for interactive pages with bindings/actions it is the full dataset.
-
-Templates always inject:
-
-```html
-<script>window.__IGNITION_INITIAL_DATA__ = {{{initialData}}};</script>
-```
-
-`__IGNITION_MANIFEST__` is still generated, but only for `loadDataset()` to diff personalized datasets.
-
-For reactive pages the build also injects a non-blocking preload link for the full dataset JSON, so the browser starts fetching it in parallel without delaying the page load event.
-
-The output block carries the declarative attributes the client runtime consumes:
-
-```html
-<div data-ignition-block="demo/product-list" data-ignition-data="products" data-ignition-depends="filtered">
-    <div class="product">...</div>
-</div>
-```
-
-The client runtime provides:
-- **Reactive state** — deep Proxy with path-based subscriptions and read tracking for computed values
-- **Blocks** — declarative DOM regions that re-render when dependencies change (`data-ignition-data` slices state, supports multiple named slices; `data-ignition-depends` declares subscriptions)
-- **Bindings** — two-way data binding for form elements
-- **Actions** — named event handlers that mutate state
-- **Computed** — cached derived values with dependency-tracked lazy recomputation
-- **Personalized datasets** (`diff.js`) — `loadDataset(url)` diffs a freshly loaded dataset against the manifest and re-renders ONLY the changed blocks
-
-### Key Concepts
-
-#### Layouts and Datasets
-
-Separation of **how to display** (layout) and **what to display** (dataset):
-
-- **Layout** = template file `input/templates/{name}.hbs` — defines structure and styling
-- **Dataset** = JSON file `input/data/{layout}/{name}.json` — defines content
-
-One layout works with **any** number of datasets. No need to duplicate templates — just add a new JSON → get new pages.
-
-```
-input/templates/product-card.hbs           ← one template
-input/data/product-card/phones.json        ← "phones" dataset
-input/data/product-card/laptops.json       ← "laptops" dataset
-```
-
-URL structure: `/{layout}/{dataset}/page/{number}` → `/catalog/books/page/2`
-
-#### Explicit is Better Than Implicit
-
-`pageTemplate="catalog/page"` instead of dynamic name concatenation. Clear file mapping, no "magic".
-
-### Data Flow
-
-```
-input/data/*.json ─┐
-                   ├─▶ Queue.processTask() ─▶ Renderer.renderTemplate() ─▶ output/public/
-input/templates/*.hbs ┘
-```
-
-### Pagination Rendering
-
-1. Template calls `{{> ignition/pagination collection="products" perPage=10 pageTemplate="catalog/page" layout=layout dataset=dataset}}`
-2. Server splits the collection into pages and generates HTML for each
-3. Client-side `ignition-pagination.js` drives CSR through the **common runtime** (`window.ignition`): the page slice is exposed as reactive state and templates render via the shared registry — no bespoke class, no duplicated helpers
-4. URL updates via `history.pushState`
+See [REACTIVITY.md §11](REACTIVITY.md#11-page-lifecycle) for the full lifecycle.
 
 ## Project Structure
 
 ```
 ignition/
 ├── engine/                         # ENGINE CODE (npm package "files")
-│   ├── bin/
-│   │   └── cli.js                  # CLI entry point (build / watch)
-│   ├── config/
-│   │   └── default.js              # Default configuration
-│   ├── core/
+│   ├── bin/cli.js                  # CLI entry point (build / watch)
+│   ├── config/default.js           # Default configuration
+│   ├── core/                       # Core rendering + runtime
 │   │   ├── assets/                 # Client-side static files
-│   │   │   ├── ignition-runtime.js # GENERATED IIFE bundle (build-runtime.js)
-│   │   │   └── ignition-pagination.js # CSR pagination (common runtime)
-│   │   ├── handlebars.js           # Server-side partials registration + helpers delegate
+│   │   │   ├── ignition-runtime.js # GENERATED IIFE bundle
+│   │   │   └── ignition-pagination.js # CSR pagination controller
+│   │   ├── compiler.js             # Template analysis: auto-blocks, auto-bindings, projections
+│   │   ├── handlebars.js           # Server-side partials + helpers delegate
 │   │   ├── helpers.js              # CANONICAL helper source (single, server + client)
 │   │   ├── pagination.js           # Server-side pagination logic
-│   │   ├── partials/               # System partials
-│   │   │   └── pagination.hbs
+│   │   ├── partials/pagination.hbs # System partial
 │   │   ├── queue.js                # Task queue + chokidar watcher
-│   │   ├── renderer.js             # Template rendering engine (SSR {{#block}} + manifest)
+│   │   ├── renderer.js             # Template rendering engine (SSR + auto-inject)
 │   │   ├── runtime/                # Client-side reactivity (ESM modules)
-│   │   │   ├── index.js            # Unified ESM entry
+│   │   │   ├── index.js
 │   │   │   ├── state.js            # Reactive Proxy state
-│   │   │   ├── binding.js          # Blocks, bindings, actions (data-ignition-data)
+│   │   │   ├── binding.js          # Blocks, bindings, actions
 │   │   │   ├── render.js           # Template registry and hydration
 │   │   │   ├── computed.js         # Cached derived values
-│   │   │   └── diff.js             # Personalized dataset diff (getSlice/diffSlices/mergeSlices/loadDataset)
+│   │   │   └── diff.js             # Personalized dataset diff
 │   │   └── sitemap.js              # sitemap.xml and robots.txt generator
-│   ├── utils/
-│   │   ├── deepGet.js              # Safe nested object property access
-│   │   ├── fs.js                   # Safe FS operations (atomicWrite, safeMkdir)
-│   │   ├── logger.js               # Winston logger
-│   │   └── parseParams.js          # Handlebars param parser (shared)
+│   ├── utils/                      # General utilities
 │   └── logs/
-├── scripts/                        # Build tooling
+├── scripts/
 │   └── build-runtime.js            # Generates ignition-runtime.js IIFE from ESM
 ├── input/                          # SOURCE DATA (edited by user)
 │   ├── templates/                  # Handlebars templates
-│   │   ├── catalog.hbs             # Catalog layout template (demo, paginated)
-│   │   ├── catalog/
-│   │   │   └── page.hbs            # Pagination page partial (demo)
-│   │   ├── demo.hbs                # Clean lay-out with {{#block}} SSR demo
-│   │   ├── demo/
-│   │   │   └── product-list.hbs    # Reactive block partial (demo)
-│   │   ├── landing.hbs             # Landing page template (demo)
-│   │   └── ignition/
-│   │       └── pagination.hbs      # System partial (optional override)
-│   └── data/                       # JSON data
-│       ├── catalog/books.json      # Demo: book list (pagination)
-│       ├── demo/app.json           # Demo: clean {{#block}} + manifest
-│       └── landing/                # Demo: landing page data
+│   ├── data/                       # JSON data
+│   └── controllers/                # Page controllers (auto-injected)
 ├── output/public/                  # GENERATED CONTENT (do not edit manually)
 ├── tests/                          # Test suite (vitest)
 │   ├── requirements/               # Requirements spec tests (A-H groups)
@@ -186,25 +78,23 @@ ignition/
 │   ├── fixtures/                   # Test fixtures
 │   └── utils/                      # Utility tests
 ├── tmp/                            # Temporary files (auto-cleaned)
-├── demo.html                       # Original demo for migration
 ├── AGENTS.md                       # This file
-├── README.md                       # Project overview
-├── QUICKSTART.md                   # Quick start guide
-├── REACTIVITY.md                   # Client-side reactivity documentation
-├── REVIEW-extmob-AUDIT.md          # Code review audit
-├── MIGRATION-REPORT.md             # Migration experiment report
-└── TODO.md                         # Roadmap
+├── QUICKSTART.md                   # Short linear quick-start
+├── REACTIVITY.md                   # Full framework guide (everyday + deep dive)
+└── README.md                       # Project overview
 ```
+
+**Total: 337 tests across 42 test files (as of 2026-08-28)**
 
 ## Technologies
 
-- **Language**: JavaScript (Node.js >= 18, ES Modules `"type": "module"`)
-- **Template engine**: Handlebars ^4.7.8
-- **CLI**: Commander ^14.0.2
-- **File watcher**: Chokidar ^3.5.3
-- **Task queue**: p-queue ^7.3.4
-- **Logging**: Winston ^3.10.0
-- **Test framework**: Vitest ^4.1.11 + jsdom ^30.0.1
+- JavaScript (Node.js >= 18, ES Modules `"type": "module"`)
+- Handlebars ^4.7.8
+- Commander ^14.0.2
+- Chokidar ^3.5.3
+- p-queue ^7.3.4
+- Winston ^3.10.0
+- Vitest ^4.1.11 + jsdom ^30.0.1
 
 ## CLI Commands
 
@@ -219,162 +109,73 @@ npm run test:watch     # Run tests in watch mode
 node scripts/build-runtime.js  # Rebuild the client IIFE after runtime/helper changes
 ```
 
-## Handlebars Helpers
-
-All helpers are available **both server-side and client-side**.
-
-| Helper | Signature | Description |
-|---|---|---|
-| `times` | `{{#times N}}...{{/times}}` | Iterate from 1 to N |
-| `ifCond` | `{{#ifCond a op b}}...{{/ifCond}}` | Conditional operator (==, ===, !=, <, >, &&, \|\|) |
-| `get` | `{{get obj "path"}}` | Safe nested property access |
-| `concat` | `{{concat a b...}}` | String concatenation |
-| `declineWord` | `{{declineWord count "one" "two" "five"}}` | Russian word declension by number |
-| `json` | `{{json value}}` | Safe JSON.stringify |
-
-Single source: `engine/core/helpers.js` (`registerHelpersWith`). The generated `ignition-runtime.js` bundle registers the same helpers on the client, so there is no server/client duplication.
-
-### Custom Helpers
-
-Page configs can register additional helpers via the API:
-
-```js
-window.__IGNITION_PAGE_CONFIG__ = function(state, api) {
-    api.registerHelper('starFill', function(level, starNum) {
-        if (level >= starNum) return 100;
-        if (level >= starNum - 0.5) return 50;
-        return 0;
-    });
-};
-```
-
 ## Configuration
 
 Key settings in `engine/config/default.js`:
 
-- `source.templates` → `input/templates` — templates
-- `source.data` → `input/data` — data
-- `output.public` → `output/public` — output
-- `pagination.defaultPerPage` → 10 — items per page
-- `pagination.maxPages` → 100 — max pages
-- `queue.concurrency` → 2 — parallel tasks
-- `queue.debounce` → 500 — rebuild delay (ms)
-- `domain` → `https://example.com` — for sitemap generation
-
-## Client-Side Reactivity API
-
-### HTML Attributes
-
-| Attribute | Element | Description |
-|-----------|---------|-------------|
-| `data-ignition-block="name"` | Any | Marks this element as a reactive block |
-| `data-ignition-data="path"` | Block | State path passed as the block template data context. Multiple paths: `data-ignition-data="products, categories"` |
-| `data-ignition-depends="a, b"` | Block | Comma-separated dependency paths |
-| `data-ignition-binding="path"` | Input/Select/Textarea | Two-way binding to state path |
-| `data-ignition-on="event -> action(args)"` | Any | Event handler declaration. Multiple handlers: `click -> a(); keydown -> b()` |
-| `data-ignition-class="class: path"` | Any | Toggle class based on state path. Multiple: `class1: path1; class2: path2`. Use `!` to negate |
-| `data-ignition-attr-{name}="path"` | Any | Toggle attribute/property based on state path. Use `!` to negate |
-
-### Page Config
-
-```html
-<script>
-window.__IGNITION_PAGE_CONFIG__ = function(state, api) {
-    // Register actions
-    api.action('cartAdd', function(s, id, price) {
-        s.cart.items.push({ id: id, price: price });
-    });
-
-    // Custom renderers (control data passed to block templates)
-    api.blockOptions.renderers['catalog/product-list'] = function(s) {
-        return s.filteredProducts;
-    };
-
-    // Extra subscriptions for computed data
-    api.blockOptions.sourceDeps['catalog/product-list'] = ['products', 'ui'];
-
-    // Lifecycle hook
-    api.blockOptions.afterHydrate = function(block, html) {
-        // Restore focus, scroll, etc.
-    };
-
-    // Custom Handlebars helpers
-    api.registerHelper('myHelper', function(arg) { return arg; });
-};
-</script>
-```
-
-### Action Signature
-
-```js
-api.action('name', function(state, ...args, event) {
-    // event is always the last argument
-    // event.key, event.target, event.preventDefault(), etc.
-});
-```
-
-## Responsibility Boundaries
-
-### What SHOULD be in Ignition
-
-- Rendering JSON + templates → HTML
-- Client-side reactivity (blocks, bindings, actions, computed)
-- Pagination as a template pattern
-- Atomic file replacement (fs.rename)
-- Incremental rebuilds
-- sitemap.xml and robots.txt generation
-- Client-side pagination hydration
-
-### What SHOULD be in the External Controller
-
-- Business logic and data generation
-- CMS/API integration
-- Data localization (i18n)
-- Image generation
-- Analytics and metrics
-- Deployment logic
-- Form validation
-- State reset patterns
-
-Ignition can be packaged in Docker as a "black box": mount `input/` (templates + JSON) and `output/` (ready HTML), the watcher runs continuously. The controller just drops JSON — the container renders.
-
-### What Should NOT Be Added to Ignition
-
-- Plugin systems with DI containers
-- Compilers/transpilers
-- Complex lifecycle hooks (afterHydrate is sufficient)
-- Built-in data sources
-- Form validation (external controller's job)
-- Built-in routing
+- `source.templates` → `input/templates`
+- `source.data` → `input/data`
+- `source.controllers` → `input/controllers`
+- `output.public` → `output/public`
+- `pagination.defaultPerPage` → 10
+- `pagination.maxPages` → 100
+- `queue.concurrency` → 2
+- `queue.debounce` → 500 ms
+- `domain` → `https://example.com`
 
 ## Code Conventions
 
 ### Do
 
-- All modules use **ES Modules** (`import`/`export`), not CommonJS
+- Use **ES Modules** (`import`/`export`)
 - File naming: `camelCase.js` for utilities, descriptive names for core modules
 - Handlebars files: `.hbs` extension
-- Security: use `safeMkdir` and `atomicWrite` from `engine/utils/fs.js` for FS operations
-- Logging: use Winston from `engine/utils/logger.js`
-- Configuration: read from `engine/config/default.js`, merge with CLI options
-- Client-side IIFE bundle (`ignition-runtime.js`) is **generated** from ESM modules by `scripts/build-runtime.js` — after changing runtime modules or `helpers.js`, regenerate it and never edit the bundle by hand
+- Use `safeMkdir` and `atomicWrite` from `engine/utils/fs.js`
+- Use Winston from `engine/utils/logger.js`
+- Regenerate `engine/core/assets/ignition-runtime.js` after changing `engine/core/runtime/*` or `engine/core/helpers.js`
 
 ### Don't
 
 - Add comments without explicit request
 - Use CommonJS (`require`/`module.exports`)
-- Edit files in `output/public/` — this is generated content
-- Add dependencies unnecessarily (project is minimalistic)
+- Edit files in `output/public/`
+- Add dependencies unnecessarily
 - Break compatibility with the JSON data format
 - Add business logic to the core — that's the external controller's job
 
+## Responsibility Boundaries
+
+### In Ignition
+
+- Rendering JSON + templates → HTML
+- Client-side reactivity (blocks, bindings, actions, computed)
+- Pagination as a template pattern
+- Atomic file replacement
+- Incremental rebuilds
+- sitemap.xml and robots.txt
+
+### In the External Controller
+
+- Business logic and data generation
+- CMS/API integration
+- i18n
+- Image generation
+- Analytics
+- Deployment logic
+- Form validation
+
+## Agent Procedures
+
 ### Adding a New Layout
 
-1. Create template in `input/templates/{layout}.hbs`
+1. Create `input/templates/{layout}.hbs`
 2. Create `input/templates/{layout}/` folder for partials (if needed)
 3. Create JSON data in `input/data/{layout}/{dataset}.json`
-4. For pagination: add `{{> ignition/pagination ...}}` to the template
-5. For reactivity: add `{{#block name="..." data="..." depends="..."}}` in the template
+4. For pagination: add `{{> ignition/pagination ...}}`
+5. For reactivity: add `{{> partial path}}` or `{{#block ...}}`
+6. For controller logic: create `input/controllers/{layout}.js`
+
+See [REACTIVITY.md](REACTIVITY.md) for template syntax, controller API, and data modes.
 
 ### Adding a New Handlebars Helper
 
@@ -387,71 +188,16 @@ Ignition can be packaged in Docker as a "black box": mount `input/` (templates +
 
 1. Create ESM module in `engine/core/runtime/`
 2. Export from `engine/core/runtime/index.js`
-3. Add it to `scripts/build-runtime.js` (so it is included in the generated IIFE)
+3. Add it to `scripts/build-runtime.js`
 4. Add tests in `tests/runtime/`
 5. Regenerate the IIFE with `node scripts/build-runtime.js`
 6. Run full test suite: `npm run test`
 
-## Frequently Changed Files
+## Useful Links
 
-- `engine/core/renderer.js` — rendering logic
-- `engine/core/queue.js` — task queue and watcher
-- `engine/core/handlebars.js` — helpers delegate (registers canonical helpers)
-- `engine/core/helpers.js` — canonical helper source (single source, server + client)
-- `engine/core/pagination.js` — server-side pagination
-- `engine/core/runtime/binding.js` — blocks, bindings, actions (ESM)
-- `engine/core/runtime/state.js` — reactive state (ESM)
-- `engine/core/runtime/diff.js` — personalized dataset diff (ESM)
-- `engine/core/assets/ignition-runtime.js` — generated client-side IIFE bundle
-- `input/templates/*.hbs` — user templates
-- `input/data/**/*.json` — user data
-
-## Rarely Changed Files
-
-- `engine/bin/cli.js` — stable entry point
-- `engine/config/default.js` — configuration
-- `engine/utils/*.js` — general-purpose utilities
-- `engine/core/sitemap.js` — sitemap generation
-- `engine/core/assets/ignition-pagination.js` — client-side pagination controller (common runtime)
-- `engine/core/runtime/computed.js` — computed values (stable)
-- `engine/core/runtime/render.js` — template registry and hydration (stable)
-
-## Test Structure
-
-```
-tests/
-├── requirements/               # Requirements spec tests (groups A-H)
-│   ├── A-server-render.test.js     # Server-side rendering of reactive blocks
-│   ├── B-data-loading.test.js      # Page weight, manifest, async loading
-│   ├── C-hydration.test.js         # Client hydration of server-rendered blocks
-│   ├── D-reactive-updates.test.js  # Reactive updates, error handling
-│   ├── E-personalized-dataset.test.js  # Personalized dataset diff + partial re-render
-│   ├── F-isomorphic-helpers.test.js    # Helpers work on both server and client
-│   ├── G-pagination.test.js        # SSR + CSR pagination
-│   ├── H-reliability.test.js       # Edge cases, error resilience
-│   └── helpers.js                  # Shared test utilities
-├── runtime/                    # Unit tests for runtime modules
-│   ├── state.test.js               # Reactive proxy, subscriptions
-│   ├── binding.test.js             # initBlocks, initBinding, actions
-│   ├── render.test.js              # Template registry, hydration
-│   ├── computed.test.js            # Computed values
-│   ├── diff.test.js                # Personalized dataset diff
-│   ├── client-helpers.test.js      # Client-side Handlebars helpers
-│   └── select-each.test.js         # Dynamic select options
-├── integration/                # Full pipeline tests
-│   ├── build.test.js               # Build pipeline
-│   ├── cli.test.js                 # CLI commands
-│   ├── csr-browser.test.js         # CSR pagination
-│   ├── reactivity-catalog.test.js  # Catalog reactivity
-│   ├── reactivity-dashboard.test.js # Dashboard reactivity
-│   ├── reactivity-form.test.js     # Form reactivity
-│   └── ssr-blocks.test.js          # SSR {{#block}} + compact manifest
-├── core/                       # Core module tests
-│   └── sitemap.test.js             # Sitemap generation
-├── fixtures/                   # Test fixtures (templates, data)
-│   └── ssr/                        # Clean {{#block}} SSR fixture
-└── utils/                      # Utility tests
-    └── fs.test.js                  # File system operations
-```
-
-**Total: 265 tests across 27 test files (as of 2026-08-27)**
+- [QUICKSTART.md](QUICKSTART.md) — 5-minute linear start
+- [REACTIVITY.md](REACTIVITY.md) — full framework guide
+  - Part 1: everyday usage
+  - Part 2: deep dive into auto-blocks, auto-bindings, boot sequence, internals
+- [README.md](README.md) — project overview
+- [TODO.md](TODO.md) — roadmap

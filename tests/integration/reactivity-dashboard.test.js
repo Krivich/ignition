@@ -36,6 +36,15 @@ describe('Reactivity: Dashboard (multi-block + computed chains)', () => {
       { recursive: true }
     );
 
+    // Copy controller (v2: external controller via window.ignition.controller)
+    const controllersDir = path.join(inputDir, 'controllers');
+    await fs.mkdir(controllersDir, { recursive: true });
+    await fs.cp(
+      path.join(projectRoot, 'tests', 'fixtures', 'dashboard', 'controllers'),
+      controllersDir,
+      { recursive: true }
+    );
+
     const assetsSrc = path.join(projectRoot, 'engine', 'core', 'assets');
     const assetsDest = path.join(tmpDir, 'output', 'public', 'assets');
     await fs.mkdir(assetsDest, { recursive: true });
@@ -138,7 +147,7 @@ describe('Reactivity: Dashboard (multi-block + computed chains)', () => {
     }, { timeout: 5000 });
 
     // Select "month" (shows all — same as week in our small dataset)
-    await page.selectOption('select[data-ignition-binding="ui.period"]', 'month');
+    await page.selectOption('#periodSelect', 'month');
 
     // Should still show all items (our test data is small)
     await page.waitForFunction(() => {
@@ -162,7 +171,7 @@ describe('Reactivity: Dashboard (multi-block + computed chains)', () => {
     }, { timeout: 5000 });
 
     // Click refresh
-    await page.click('button[data-ignition-on="click → metricsRefresh"]');
+    await page.click('#refreshBtn');
 
     // All widgets should show skeleton (loading state)
     await page.waitForFunction(() => {
@@ -190,7 +199,7 @@ describe('Reactivity: Dashboard (multi-block + computed chains)', () => {
     const initialText = await page.locator('[data-ignition-block="dashboard/footer"]').textContent();
 
     // Trigger refresh — data changes
-    await page.click('button[data-ignition-on="click → metricsRefresh"]');
+    await page.click('#refreshBtn');
 
     // Wait for all widgets to re-render (skeletons appear then disappear)
     await page.waitForFunction(() => {
@@ -219,8 +228,8 @@ describe('Reactivity: Dashboard (multi-block + computed chains)', () => {
       return document.querySelector('[data-ignition-block="dashboard/summary"] .metric') !== null;
     }, { timeout: 5000 });
 
-    await page.selectOption('select[data-ignition-binding="ui.period"]', 'month');
-    await page.click('button[data-ignition-on="click → metricsRefresh"]');
+    await page.selectOption('#periodSelect', 'month');
+    await page.click('#refreshBtn');
 
     await page.waitForFunction(() => document.querySelectorAll('.skeleton').length === 0, { timeout: 10000 });
 

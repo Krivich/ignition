@@ -57,9 +57,29 @@ function build() {
   ${inlineSource(path.join(RUNTIME_DIR, 'diff.js'))}
 
   // ========== Boot ==========
+
+  // Controllers registered before the runtime boots are queued and run once the
+  // reactive state is ready. This makes the auto-injected <script> controller
+  // files order-independent vs. the runtime's own DOM-ready boot.
+  var pendingControllers = [];
+
+  // Expose the live runtime immediately (before DOM-ready boot). The
+  // controller method gathers callbacks here; if the state already exists
+  // (a controller script loaded after boot), it runs the callback at once.
+  window.ignition = {
+    controller: function (cb) {
+      if (typeof cb !== 'function') return;
+      if (typeof window.__IGNITION_STATE__ !== 'undefined' && window.__IGNITION_STATE__) {
+        cb(window.__IGNITION_STATE__, (window.__IGNITION_MAKE_API__ || function () { return {}; })());
+      } else {
+        pendingControllers.push(cb);
+      }
+    }
+  };
+
   function processAllBindings(state, root) {
     var scope = root || document;
-    scope.querySelectorAll('[data-ignition-binding], [data-ignition-class]').forEach(function (el) {
+    scope.querySelectorAll('[data-ignition-binding], [data-ignition-class], [data-ignition-text]').forEach(function (el) {
       initBinding(state, el);
     });
     scope.querySelectorAll('*').forEach(function (el) {
@@ -68,11 +88,6 @@ function build() {
       });
       if (hasAttr) initBinding(state, el);
     });
-  }
-
-  function processAllEventHandlers(state, root) {
-    var elements = (root || document).querySelectorAll('[data-ignition-on]');
-    elements.forEach(function (el) { processEventHandlers(state, el); });
   }
 
   function boot() {
@@ -101,36 +116,46 @@ function build() {
     var state = createReactiveState(initialData);
 
     var blockOptions = { renderers: {}, sourceDeps: {}, afterHydrate: null };
-    if (typeof window.__IGNITION_PAGE_CONFIG__ === 'function') {
-      window.__IGNITION_PAGE_CONFIG__(state, {
+    var makeApi = function () {
+      return {
         computed: createComputed,
-        action: function (name, fn) { registerAction(name, fn); },
         registerTemplate: registerTemplate,
         registerHelper: function (name, fn) { Handlebars.registerHelper(name, fn); },
         loadDataset: function (url) { return loadDataset(state, url); },
         blockOptions: blockOptions
-      });
-    }
+      };
+    };
 
     initBlocks(state, blockOptions);
 
     processAllBindings(state);
-    processAllEventHandlers(state);
 
     window.__IGNITION_STATE__ = state;
+    window.__IGNITION_MAKE_API__ = makeApi;
 
     // Expose the live runtime so pagination and other client controllers
     // reuse the SAME template registry, helpers and reactive state.
     window.ignition = {
       state: state,
+      set: function (path, value) { state.set(path, value); },
+      ephemeral: function (path, value, ttl) { state.ephemeral(path, value, ttl); },
       registerTemplate: registerTemplate,
       getTemplate: getTemplate,
       renderTemplate: renderTemplate,
       fetchJson: fetchJson,
       hydrate: hydrate,
       computed: createComputed,
-      action: registerAction
+      // The controller is the external "who changes the model". Register it,
+      // and it runs as soon as the reactive state is ready.
+      controller: function (cb) {
+        if (typeof cb !== 'function') return;
+        cb(state, makeApi());
+      }
     };
+
+    // Replay controllers that were queued while the runtime was still booting.
+    pendingControllers.forEach(function (cb) { cb(state, makeApi()); });
+    pendingControllers = [];
   }
 
   // Auto-boot

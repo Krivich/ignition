@@ -1,0 +1,12 @@
+<div class="skills-list">
+  {{#each this}}
+  <div class="skill-row">
+    <span class="skill-name">{{name}}</span>
+    <span class="skill-stars" title="{{name}}">
+      {{#times 5}}
+        <span class="star" data-level="{{starFill ../level this}}">★</span>
+      {{/times}}
+    </span>
+  </div>
+  {{/each}}
+</div>

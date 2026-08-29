@@ -36,6 +36,15 @@ describe('Reactivity: Form (validation + async)', () => {
       { recursive: true }
     );
 
+    // Copy controller (v2: external controller via window.ignition.controller)
+    const controllersDir = path.join(inputDir, 'controllers');
+    await fs.mkdir(controllersDir, { recursive: true });
+    await fs.cp(
+      path.join(projectRoot, 'tests', 'fixtures', 'form', 'controllers'),
+      controllersDir,
+      { recursive: true }
+    );
+
     const assetsSrc = path.join(projectRoot, 'engine', 'core', 'assets');
     const assetsDest = path.join(tmpDir, 'output', 'public', 'assets');
     await fs.mkdir(assetsDest, { recursive: true });
@@ -86,7 +95,7 @@ describe('Reactivity: Form (validation + async)', () => {
     await page.goto(`${baseUrl}/form/default.html`);
     await page.waitForLoadState('networkidle');
 
-    const nameInput = page.locator('input[data-ignition-binding="form.fields.name"]');
+    const nameInput = page.locator('#name');
     const visible = await nameInput.isVisible();
     expect(visible).toBe(true);
     const value = await nameInput.inputValue();
@@ -100,7 +109,7 @@ describe('Reactivity: Form (validation + async)', () => {
     await page.goto(`${baseUrl}/form/default.html`);
     await page.waitForLoadState('networkidle');
 
-    await page.fill('input[data-ignition-binding="form.fields.name"]', 'Алексей');
+    await page.fill('#name', 'Алексей');
 
     // State should be updated
     const stateValue = await page.evaluate(() => {
@@ -117,8 +126,8 @@ describe('Reactivity: Form (validation + async)', () => {
     await page.waitForLoadState('networkidle');
 
     // Focus and blur name field to trigger validation
-    await page.click('input[data-ignition-binding="form.fields.name"]');
-    await page.click('input[data-ignition-binding="form.fields.email"]');
+    await page.click('#name');
+    await page.click('#email');
 
     // Error should appear
     await page.waitForFunction(() => {
@@ -148,9 +157,9 @@ describe('Reactivity: Form (validation + async)', () => {
     await page.goto(`${baseUrl}/form/default.html`);
     await page.waitForLoadState('networkidle');
 
-    await page.fill('input[data-ignition-binding="form.fields.name"]', 'Тест');
-    await page.fill('input[data-ignition-binding="form.fields.email"]', 'test@test.com');
-    await page.fill('textarea[data-ignition-binding="form.fields.message"]', 'Привет');
+    await page.fill('#name', 'Тест');
+    await page.fill('#email', 'test@test.com');
+    await page.fill('#message', 'Привет');
 
     // Wait for validation to pass
     await page.waitForFunction(() => {
@@ -170,9 +179,9 @@ describe('Reactivity: Form (validation + async)', () => {
     await page.waitForLoadState('networkidle');
 
     // Fill form
-    await page.fill('input[data-ignition-binding="form.fields.name"]', 'Тест');
-    await page.fill('input[data-ignition-binding="form.fields.email"]', 'test@test.com');
-    await page.fill('textarea[data-ignition-binding="form.fields.message"]', 'Сообщение');
+    await page.fill('#name', 'Тест');
+    await page.fill('#email', 'test@test.com');
+    await page.fill('#message', 'Сообщение');
 
     await page.waitForFunction(() => {
       const btn = document.querySelector('button[type="submit"]');
@@ -199,9 +208,9 @@ describe('Reactivity: Form (validation + async)', () => {
     await page.waitForLoadState('networkidle');
 
     // Fill, submit, wait for success
-    await page.fill('input[data-ignition-binding="form.fields.name"]', 'Тест');
-    await page.fill('input[data-ignition-binding="form.fields.email"]', 't@t.com');
-    await page.fill('textarea[data-ignition-binding="form.fields.message"]', 'Ок');
+    await page.fill('#name', 'Тест');
+    await page.fill('#email', 't@t.com');
+    await page.fill('#message', 'Ок');
     await page.waitForFunction(() => !document.querySelector('button[type="submit"]')?.disabled);
     await page.click('button[type="submit"]');
 
@@ -211,11 +220,11 @@ describe('Reactivity: Form (validation + async)', () => {
     }, { timeout: 10000 });
 
     // Click "send again"
-    await page.click('.success button');
+    await page.click('#resetBtn');
 
     // Form should be visible again with empty fields
     await page.waitForFunction(() => {
-      const nameInput = document.querySelector('input[data-ignition-binding="form.fields.name"]');
+      const nameInput = document.querySelector('#name');
       return nameInput && nameInput.value === '';
     }, { timeout: 5000 });
 

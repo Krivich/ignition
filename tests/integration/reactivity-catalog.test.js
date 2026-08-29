@@ -38,6 +38,15 @@ describe('Reactivity: Catalog (search + cart)', () => {
       { recursive: true }
     );
 
+    // Copy controller (v2: external controller via window.ignition.controller)
+    const controllersDir = path.join(inputDir, 'controllers');
+    await fs.mkdir(controllersDir, { recursive: true });
+    await fs.cp(
+      path.join(projectRoot, 'tests', 'fixtures', 'catalog', 'controllers'),
+      controllersDir,
+      { recursive: true }
+    );
+
     // Copy ignition runtime assets (will exist after implementation)
     const assetsSrc = path.join(projectRoot, 'engine', 'core', 'assets');
     const assetsDest = path.join(tmpDir, 'output', 'public', 'assets');
@@ -119,7 +128,7 @@ describe('Reactivity: Catalog (search + cart)', () => {
     });
 
     // Type in search
-    await page.fill('input[data-ignition-binding="ui.searchQuery"]', 'книг');
+    await page.fill('#searchInput', 'книг');
 
     // Wait for filtered results
     await page.waitForFunction(() => {
@@ -142,7 +151,7 @@ describe('Reactivity: Catalog (search + cart)', () => {
     await page.goto(`${baseUrl}/catalog/books.html`);
     await page.waitForLoadState('networkidle');
 
-    await page.selectOption('select[data-ignition-binding="ui.activeCategory"]', 'electronics');
+    await page.selectOption('#categorySelect', 'electronics');
 
     await page.waitForFunction(() => {
       const cards = document.querySelectorAll('.product-card');
@@ -236,7 +245,7 @@ describe('Reactivity: Catalog (search + cart)', () => {
     });
 
     // Full cycle: search → filter → add to cart → remove → clear search
-    await page.fill('input[data-ignition-binding="ui.searchQuery"]', 'мышь');
+    await page.fill('#searchInput', 'мышь');
     await page.waitForFunction(() => document.querySelectorAll('.product-card').length === 1);
 
     await page.click('.product-card:first-child button');
@@ -245,7 +254,7 @@ describe('Reactivity: Catalog (search + cart)', () => {
     await page.click('.cart-details button');
     await page.waitForFunction(() => document.querySelector('.cart-empty'));
 
-    await page.fill('input[data-ignition-binding="ui.searchQuery"]', '');
+    await page.fill('#searchInput', '');
     await page.waitForFunction(() => document.querySelectorAll('.product-card').length === 4);
 
     // No full page reload throughout

@@ -5,6 +5,8 @@ export function createReactiveState(initialData) {
   let notifyDepth = 0;
   let pendingNotifications = [];
   let activeTracker = null;
+  const ephemeralTimers = new Map();
+  let suppressingEphemeralCancel = false;
 
   function doNotify(fullPath, oldVal, newVal) {
     for (const [pattern, callbacks] of listeners) {
@@ -62,6 +64,12 @@ export function createReactiveState(initialData) {
         if (rawOld === rawNew) return true;
         target[key] = value;
         const path = prefix ? `${prefix}.${String(key)}` : String(key);
+        // A permanent (non-ephemeral) assignment cancels any pending ephemeral
+        // timer for this path, so a stale timer cannot null it out later.
+        if (!suppressingEphemeralCancel && ephemeralTimers.has(path)) {
+          clearTimeout(ephemeralTimers.get(path));
+          ephemeralTimers.delete(path);
+        }
         notify(path, old, value);
         return true;
       },
@@ -104,6 +112,35 @@ export function createReactiveState(initialData) {
     const deps = new Set(activeTracker);
     activeTracker = prev;
     return deps;
+  };
+
+  state.set = function (path, value) {
+    const keys = String(path).split('.');
+    let target = state;
+    for (let i = 0; i < keys.length - 1; i++) {
+      target = target[keys[i]];
+      if (target === undefined || target === null) {
+        throw new Error(`Cannot set path "${path}": "${keys[i]}" is undefined`);
+      }
+    }
+    target[keys[keys.length - 1]] = value;
+  };
+
+  state.ephemeral = function (path, value, ttl) {
+    if (ephemeralTimers.has(path)) {
+      clearTimeout(ephemeralTimers.get(path));
+    }
+    state.set(path, value);
+    const timer = setTimeout(() => {
+      suppressingEphemeralCancel = true;
+      try {
+        state.set(path, null);
+      } finally {
+        suppressingEphemeralCancel = false;
+      }
+      ephemeralTimers.delete(path);
+    }, ttl);
+    ephemeralTimers.set(path, timer);
   };
 
   return state;

@@ -9,7 +9,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createReactiveState } from '../../engine/core/runtime/state.js';
 import { registerTemplate, resetRegistry } from '../../engine/core/runtime/render.js';
-import { initBlocks, initBinding, resetActions } from '../../engine/core/runtime/binding.js';
+import { initBlocks, initBinding } from '../../engine/core/runtime/binding.js';
 
 describe('C. Client hydration', () => {
   let state;
@@ -22,7 +22,6 @@ describe('C. Client hydration', () => {
 
   afterEach(() => {
     resetRegistry();
-    resetActions();
   });
 
   describe('C1: Client attaches to existing DOM, does not re-render', () => {

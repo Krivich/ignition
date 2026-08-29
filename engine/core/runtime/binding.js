@@ -1,17 +1,11 @@
 import { renderTemplate, hydrate } from './render.js';
 import { parseBlockData, buildBlockContext } from '../../utils/parseBlockData.js';
 
-const actionRegistry = new Map();
 const boundElements = new WeakSet();
 const classBoundElements = new WeakSet();
 const attrBoundElements = new WeakSet();
-const handledElements = new WeakSet();
 const textBoundElements = new WeakSet();
 const autoBoundElements = new WeakSet();
-
-export function resetActions() {
-  actionRegistry.clear();
-}
 
 function setByPath(obj, path, value) {
   const keys = path.split('.');
@@ -25,23 +19,6 @@ function setByPath(obj, path, value) {
 
 function getByPath(obj, path) {
   return path.split('.').reduce((cur, key) => cur?.[key], obj);
-}
-
-function parseArgs(argsStr) {
-  if (!argsStr || !argsStr.trim()) return [];
-  return argsStr.split(',').map(arg => {
-    const trimmed = arg.trim();
-    if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
-    if ((trimmed.startsWith("'") && trimmed.endsWith("'")) ||
-        (trimmed.startsWith('"') && trimmed.endsWith('"'))) {
-      return trimmed.slice(1, -1);
-    }
-    return trimmed;
-  });
-}
-
-export function registerAction(name, fn) {
-  actionRegistry.set(name, fn);
 }
 
 function updateFormElement(element, val) {
@@ -230,28 +207,6 @@ function initAutoBinding(state, element) {
   }
 }
 
-export function processEventHandlers(state, element) {
-  const attr = element.getAttribute('data-ignition-on');
-  if (!attr) return;
-  if (handledElements.has(element)) return;
-  handledElements.add(element);
-
-  const declarations = attr.split(';').map(s => s.trim()).filter(Boolean);
-  for (const decl of declarations) {
-    const match = decl.match(/^(\w+)\s*(?:→|->)\s*(\w+)(?:\s*\(([^)]*)\))?$/);
-    if (!match) continue;
-
-    const [, eventName, actionName, argsStr] = match;
-    const args = parseArgs(argsStr);
-
-    element.addEventListener(eventName, (e) => {
-      if (eventName === 'submit') e.preventDefault();
-      const handler = actionRegistry.get(actionName);
-      if (handler) handler(state, ...args, e);
-    });
-  }
-}
-
 export function initBlocks(state, options = {}) {
   const { renderers = {}, sourceDeps = {}, afterHydrate } = options;
   const blocks = document.querySelectorAll('[data-ignition-block]');
@@ -281,14 +236,11 @@ export function initBlocks(state, options = {}) {
     }
 
     function processBlockContent(root) {
-      root.querySelectorAll('[data-ignition-binding], [data-ignition-class]').forEach(el => {
+      root.querySelectorAll('[data-ignition-binding], [data-ignition-class], [data-ignition-text]').forEach(el => {
         initBinding(state, el);
       });
       root.querySelectorAll('*').forEach(el => {
         if (hasAttrBinding(el)) initBinding(state, el);
-      });
-      root.querySelectorAll('[data-ignition-on]').forEach(el => {
-        processEventHandlers(state, el);
       });
     }
 

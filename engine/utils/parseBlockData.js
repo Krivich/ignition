@@ -25,12 +25,14 @@ export function parseBlockData(dataStr) {
 
 export function buildBlockContext(data, parsed, getter) {
   if (parsed.mode === 'single') {
-    return parsed.paths[0] ? getter(data, parsed.paths[0].path) : data;
+    if (!parsed.paths[0]) return data;
+    if (parsed.paths[0].path === '.') return data;
+    return getter(data, parsed.paths[0].path);
   }
 
   const ctx = {};
   for (const { path, alias } of parsed.paths) {
-    ctx[alias] = getter(data, path);
+    ctx[alias] = path === '.' ? data : getter(data, path);
   }
   return ctx;
 }

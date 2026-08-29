@@ -4,7 +4,7 @@ Tasks and ideas for Ignition development. Divided into what should be **in the c
 
 > Recent redesign (2026-08-27): `{{#block}}` SSR with compact manifest, single-source helpers (`helpers.js`),
 > generated IIFE bundle (`scripts/build-runtime.js`), pagination consolidated onto the common runtime,
-> and the extmob demo removed in favor of a clean `demo.hbs` example.
+> and the old `demo.hbs` example removed in favor of the `extmob` reactive form demo and `catalog` pagination demo.
 
 ---
 
