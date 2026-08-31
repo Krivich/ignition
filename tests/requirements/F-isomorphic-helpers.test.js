@@ -146,7 +146,7 @@ describe('F. Isomorphic templates and helpers', () => {
       expect(handlebarsSrc).toContain('registerHelpersWith(Handlebars)');
 
       // The client IIFE bundle is GENERATED from the same helpers.js source
-      // (via scripts/build-runtime.js), so no hand-duplicated copies live there.
+      // (via engine/scripts/build-runtime.js), so no hand-duplicated copies live there.
       const iifeSrc = fs.readFileSync(
         path.join(projectRoot, 'engine', 'core', 'assets', 'ignition-runtime.js'),
         'utf8'
@@ -154,7 +154,7 @@ describe('F. Isomorphic templates and helpers', () => {
       // The bundle must contain the helper bodies sourced from helpers.js
       expect(iifeSrc).toContain('declineWord');
       const buildScript = fs.readFileSync(
-        path.join(projectRoot, 'scripts', 'build-runtime.js'),
+        path.join(projectRoot, 'engine', 'scripts', 'build-runtime.js'),
         'utf8'
       );
       expect(buildScript).toContain('helpers.js');

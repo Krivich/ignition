@@ -3,7 +3,7 @@
 Tasks and ideas for Ignition development. Divided into what should be **in the core** and what should be **in external services**.
 
 > Recent redesign (2026-08-27): `{{#block}}` SSR with compact manifest, single-source helpers (`helpers.js`),
-> generated IIFE bundle (`scripts/build-runtime.js`), pagination consolidated onto the common runtime,
+> generated IIFE bundle (`engine/scripts/build-runtime.js`), pagination consolidated onto the common runtime,
 > and the old `demo.hbs` example removed in favor of the `extmob` reactive form demo and `catalog` pagination demo.
 
 ---

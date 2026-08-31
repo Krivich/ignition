@@ -29,7 +29,11 @@
     "node": ">=18.0.0"
   },
   "files": [
-    "engine/"
+    "engine/bin/",
+    "engine/config/",
+    "engine/core/",
+    "engine/utils/",
+    "engine/logs/"
   ],
   "devDependencies": {
     "@playwright/test": "^1.62.1",

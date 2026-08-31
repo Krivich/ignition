@@ -3,7 +3,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, '..');
+// engine/scripts/ -> project root (engine is the sibling of scripts/ inside ROOT)
+const ROOT = path.resolve(__dirname, '..', '..');
 const RUNTIME_DIR = path.join(ROOT, 'engine', 'core', 'runtime');
 const OUTPUT = path.join(ROOT, 'engine', 'core', 'assets', 'ignition-runtime.js');
 

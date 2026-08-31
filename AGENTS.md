@@ -62,9 +62,9 @@ ignition/
 │   │   │   └── diff.js             # Personalized dataset diff
 │   │   └── sitemap.js              # sitemap.xml and robots.txt generator
 │   ├── utils/                      # General utilities
+│   ├── scripts/                    # Dev tools (not shipped in the npm package)
+│   │   └── build-runtime.js        # Generates ignition-runtime.js IIFE from ESM
 │   └── logs/
-├── scripts/
-│   └── build-runtime.js            # Generates ignition-runtime.js IIFE from ESM
 ├── input/                          # SOURCE DATA (edited by user)
 │   ├── templates/                  # Handlebars templates
 │   ├── data/                       # JSON data
@@ -106,7 +106,7 @@ npm run serve          # Local server for output/public
 npm run example        # Build with explicit paths
 npm run test           # Run all tests
 npm run test:watch     # Run tests in watch mode
-node scripts/build-runtime.js  # Rebuild the client IIFE after runtime/helper changes
+node engine/scripts/build-runtime.js  # Rebuild the client IIFE after runtime/helper changes
 ```
 
 ## Configuration
@@ -181,16 +181,16 @@ See [REACTIVITY.md](REACTIVITY.md) for template syntax, controller API, and data
 
 1. Implement in `engine/core/helpers.js` inside `registerHelpersWith(Handlebars)`
 2. Register via `Handlebars.registerHelper()`
-3. Regenerate the IIFE with `node scripts/build-runtime.js`
+3. Regenerate the IIFE with `node engine/scripts/build-runtime.js`
 4. Add tests in `tests/runtime/client-helpers.test.js`
 
 ### Adding a New Runtime Module
 
 1. Create ESM module in `engine/core/runtime/`
 2. Export from `engine/core/runtime/index.js`
-3. Add it to `scripts/build-runtime.js`
+3. Add it to `engine/scripts/build-runtime.js`
 4. Add tests in `tests/runtime/`
-5. Regenerate the IIFE with `node scripts/build-runtime.js`
+5. Regenerate the IIFE with `node engine/scripts/build-runtime.js`
 6. Run full test suite: `npm run test`
 
 ## Useful Links

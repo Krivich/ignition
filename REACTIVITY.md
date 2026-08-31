@@ -494,4 +494,4 @@ Fetch a personalized dataset and merge changes.
 - `engine/core/helpers.js` — canonical Handlebars helpers (server + client)
 - `engine/utils/deriveInitialState.js` — `needsRuntime()`, initial data derivation
 - `engine/core/runtime/*` — client-side reactivity modules
-- `scripts/build-runtime.js` — builds the client IIFE bundle
+- `engine/scripts/build-runtime.js` — builds the client IIFE bundle
