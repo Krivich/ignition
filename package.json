@@ -20,7 +20,7 @@
     "handlebars": "^4.7.9",
     "lodash.debounce": "^4.0.8",
     "p-queue": "^7.3.4",
-    "p-retry": "^5.1.1",
+    "p-retry": "^8.0.0",
     "picomatch": "^3.0.2",
     "winston": "^3.10.0"
   },
