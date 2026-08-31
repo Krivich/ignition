@@ -32,6 +32,7 @@ describe('A+B: Server-side block rendering + compact manifest (real engine)', ()
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(projectRoot, 'tmp', 'ignition-ssr-'));
     config.source.templates = path.join(tmpDir, 'input', 'templates');
+    config.source.data = path.join(tmpDir, 'input', 'data');
     config.output.html = path.join(tmpDir, 'output', 'public');
     config.output.data = path.join(tmpDir, 'output', 'public', 'data');
     config.output.templates = path.join(tmpDir, 'output', 'public', 'templates');
@@ -317,5 +318,144 @@ describe('A+B: Server-side block rendering + compact manifest (real engine)', ()
     const html = await fs.readFile(path.join(outputDir, 'main.html'), 'utf8');
 
     expect(html).not.toContain('rel="preload"');
+  });
+
+  it('B4: autoblock partial records its REAL slice in the manifest (not undefined)', async () => {
+    const templatesDir = config.source.templates;
+    const layoutDir = path.join(templatesDir, 'ssr');
+    await fs.mkdir(layoutDir, { recursive: true });
+
+    const layout = `<!DOCTYPE html>
+<html><head><title>{{title}}</title>
+  <script>window.__IGNITION_MANIFEST__ = {{{manifest}}};</script>
+</head><body>
+  {{> ssr/product-list products}}
+</body></html>`;
+    const block = `{{#each this}}<div class="product">{{name}}</div>{{/each}}`;
+
+    await fs.writeFile(path.join(templatesDir, 'ssr.hbs'), layout);
+    await fs.writeFile(path.join(layoutDir, 'product-list.hbs'), block);
+
+    const dataDir = path.join(config.source.data, 'ssr');
+    await fs.mkdir(dataDir, { recursive: true });
+    await fs.writeFile(path.join(dataDir, 'main.json'), '{}');
+
+    const data = {
+      title: 'Каталог',
+      products: [{ name: 'Товар А' }, { name: 'Товар Б' }],
+      unused: { big: [1, 2, 3, 4, 5] },
+      layout: 'ssr',
+      dataset: 'main',
+    };
+    const outputDir = path.join(config.output.html, 'ssr');
+    await renderTemplate(path.join(templatesDir, 'ssr.hbs'), data, outputDir, 'main', 'ssr');
+    const html = await fs.readFile(path.join(outputDir, 'main.html'), 'utf8');
+
+    const match = html.match(/__IGNITION_MANIFEST__\s*=\s*(\{[\s\S]*?\});/);
+    expect(match).not.toBeNull();
+    const manifest = JSON.parse(match[1]);
+
+    // SSR fills the block from the products slice
+    expect(html).toContain('data-ignition-block="ssr/product-list"');
+    expect(html).toContain('<div class="product">Товар А</div>');
+
+    // The manifest must record the ACTUAL products slice, not undefined —
+    // otherwise loadDataset would treat the identical dataset as always-changed.
+    expect(manifest['ssr/product-list']).toBeDefined();
+    expect(manifest['ssr/product-list']).toEqual(data.products);
+  });
+
+  it('B5: explicit qualified {{#block name="ssr/product-list"}} keeps its name (no double prefix)', async () => {
+    const templatesDir = config.source.templates;
+    const layoutDir = path.join(templatesDir, 'ssr');
+    await fs.mkdir(layoutDir, { recursive: true });
+
+    const layout = `<!DOCTYPE html>
+<html><head><title>{{title}}</title></head><body>
+  {{#block name="ssr/product-list" data="products"}}
+     <p class="empty">Нет товаров</p>
+  {{/block}}
+</body></html>`;
+    const block = `{{#each this}}<div class="product">{{name}}</div>{{/each}}`;
+
+    await fs.writeFile(path.join(templatesDir, 'ssr.hbs'), layout);
+    await fs.writeFile(path.join(layoutDir, 'product-list.hbs'), block);
+
+    const dataDir = path.join(config.source.data, 'ssr');
+    await fs.mkdir(dataDir, { recursive: true });
+    await fs.writeFile(path.join(dataDir, 'main.json'), '{}');
+
+    const data = {
+      title: 'Каталог',
+      products: [{ name: 'Товар А' }],
+      layout: 'ssr',
+      dataset: 'main',
+    };
+    const outputDir = path.join(config.output.html, 'ssr');
+    await renderTemplate(path.join(templatesDir, 'ssr.hbs'), data, outputDir, 'main', 'ssr');
+    const html = await fs.readFile(path.join(outputDir, 'main.html'), 'utf8');
+
+    // The block must be resolved by its full qualified name, resolving the
+    // partial and rendering the product list — not the fallback body.
+    expect(html).toContain('data-ignition-block="ssr/product-list"');
+    expect(html).not.toContain('data-ignition-block="ssr/ssr/product-list"');
+    expect(html).toContain('<div class="product">Товар А</div>');
+  });
+
+  it('B6: page with an external controller is live and inlines the FULL dataset', async () => {
+    const templatesDir = config.source.templates;
+    const layoutDir = path.join(templatesDir, 'ssr');
+    await fs.mkdir(layoutDir, { recursive: true });
+
+    const layout = `<!DOCTYPE html>
+<html><head><title>{{title}}</title></head><body>
+  {{#block name="product-list" data="products"}}
+     <p class="empty">Нет товаров</p>
+  {{/block}}
+</body></html>`;
+    const block = `{{#each this}}<div class="product">{{name}}</div>{{/each}}`;
+
+    await fs.writeFile(path.join(templatesDir, 'ssr.hbs'), layout);
+    await fs.writeFile(path.join(layoutDir, 'product-list.hbs'), block);
+
+    const dataDir = path.join(config.source.data, 'ssr');
+    await fs.mkdir(dataDir, { recursive: true });
+    await fs.writeFile(path.join(dataDir, 'main.json'), '{}');
+
+    // Place an external controller for layout `ssr`.
+    const savedControllerDir = config.source.controllers;
+    const controllersDir = path.join(config.source.templates, '..', 'controllers');
+    config.source.controllers = controllersDir;
+    await fs.mkdir(controllersDir, { recursive: true });
+    await fs.writeFile(path.join(controllersDir, 'ssr.js'), 'window.ignition.controller(function(state){})');
+
+    try {
+      const data = {
+        title: 'Каталог',
+        products: [{ name: 'Товар А' }],
+        used: 'branch',
+        bigUnused: { nested: [1, 2, 3, 4, 5] },
+        layout: 'ssr',
+        dataset: 'main',
+      };
+      const outputDir = path.join(config.output.html, 'ssr');
+      await renderTemplate(path.join(templatesDir, 'ssr.hbs'), data, outputDir, 'main', 'ssr');
+      const html = await fs.readFile(path.join(outputDir, 'main.html'), 'utf8');
+
+      // The page must be live: runtime injected + dataset preloaded.
+      expect(html).toContain('ignition-runtime.js');
+      expect(html).toContain('rel="preload"');
+
+      // §7: a controller may read arbitrary branches, so the FULL dataset is
+      // inlined — including the big unused subtree a compact subset would drop.
+      const match = html.match(/__IGNITION_INITIAL_DATA__\s*=\s*(\{[\s\S]*?\});/);
+      expect(match).not.toBeNull();
+      const initialData = JSON.parse(match[1]);
+      expect(initialData.products).toEqual([{ name: 'Товар А' }]);
+      expect(initialData.bigUnused).toEqual({ nested: [1, 2, 3, 4, 5] });
+      expect(initialData.used).toBe('branch');
+    } finally {
+      config.source.controllers = savedControllerDir;
+    }
   });
 });

@@ -23,7 +23,8 @@ export class RenderQueue extends EventEmitter {
     // Tracking changes in source files
     this.watcher = chokidar.watch([
       config.source.templates,
-      config.source.data
+      config.source.data,
+      config.source.controllers
     ], {
       ignored: /(^|[\/\\])\../,
       persistent: true,

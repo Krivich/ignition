@@ -159,27 +159,12 @@ async function injectController(html, layout, dataset, outputDir) {
  * @returns {string} - Wrapped template content
  */
 function wrapPartialWithReflection(content, blockName, dataPath, depends) {
-  // Use the existing {{#block}} helper to wrap the partial
-  // This ensures consistency with explicit blocks
-  return `{{#block name="${blockName}" data="${dataPath}" depends="${depends}"}}${content}{{/block}}`;
-}
-
-/**
- * Inject reflection attributes for auto-blocks based on compiler analysis.
- * 
- * @param {string} html - Rendered HTML
- * @param {object} analysis - Compiler analysis result
- * @param {string} layout - Layout name
- * @returns {string} - HTML with injected attributes
- */
-function injectReflection(html, analysis, layout) {
-  if (analysis.hasNoblock || analysis.partials.length === 0) {
-    return html;
-  }
-  
-  // Reflection attributes are already injected via wrapPartialWithReflection
-  // This function is now a no-op, but kept for future post-processing if needed
-  return html;
+  // Use the existing {{#block}} helper to wrap the partial.
+  // `autoblock=1` tells the helper to render the inline raw body with the
+  // current context (and record the manifest slice from the root), instead of
+  // resolving the partial by name again (which is THIS same wrapper and would
+  // recurse). Explicit {{#block}} helpers in layouts don't set this flag.
+  return `{{#block name="${blockName}" data="${dataPath}" depends="${depends}" autoblock=1}}${content}{{/block}}`;
 }
 
 // Initialize Handlebars
@@ -234,10 +219,16 @@ export async function renderTemplate(templatePath, data, outputDir, dataset, lay
             });
             
             // Inject reflection attributes for auto-blocks
-            let finalHtml = injectReflection(html, analysis, layout);
+            let finalHtml = html;
             
+            // v2: an external controller is "someone who can change the model".
+            // It may read arbitrary dataset branches, so when a controller is
+            // present the full dataset is inlined (REACTIVITY §7) and the page
+            // is live (runtime + preload injected).
+            const liveController = await hasController(layout, dataset);
+
             const renderedManifest = JSON.stringify(getManifest());
-            const derivedInitialData = jsonSafe(deriveInitialState(finalHtml, pureData, analysis));
+            const derivedInitialData = jsonSafe(deriveInitialState(finalHtml, pureData, analysis, liveController));
             const templatesJson = jsonSafe(templateSources);
             finalHtml = finalHtml
                 .split('IGNITION_INITIAL_DATA_PLACEHOLDER__').join(derivedInitialData)
@@ -246,7 +237,6 @@ export async function renderTemplate(templatePath, data, outputDir, dataset, lay
                 .split('"__IGNITION_TEMPLATES__": null').join('"__IGNITION_TEMPLATES__": ' + templatesJson);
             // v2: preload the full dataset only for live (interactive) pages —
             // a page that no one can change doesn't need the data fetched early.
-            const liveController = await hasController(layout, dataset);
             const liveRuntime = needsRuntime(finalHtml, analysis);
             const live = liveRuntime || liveController;
             logger.debug(`[ignition] Page ${dataset}.html — liveness: ${live ? 'live → runtime+preload injected' : 'static → runtime omitted'} (detected runtime: ${liveRuntime}, external controller: ${liveController})`);
@@ -254,7 +244,7 @@ export async function renderTemplate(templatePath, data, outputDir, dataset, lay
             // v2: auto-inject the runtime when the page is reactive, so the
             // developer does not hand-write the runtime <script> tags.
             finalHtml = injectClientBoot(finalHtml, {
-                initialData: deriveInitialState(finalHtml, pureData, analysis),
+                initialData: deriveInitialState(finalHtml, pureData, analysis, liveController),
                 templates: templateSources
             }, live, paginationConfig.enabled);
             // External controller (explicit "live page" declaration).

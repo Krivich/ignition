@@ -105,17 +105,31 @@ export function registerBlockHelper(Handlebars, env) {
     const depends =
       options.hash.depends !== undefined ? options.hash.depends : dataPath || '';
     const layout = this && this.layout ? this.layout : '';
-    const blockName = layout ? `${layout}/${name}` : name;
+    // If the caller already passed a fully-qualified name (layout/partial),
+    // don't prefix it again, else prefix with the current layout.
+    const blockName = name.includes('/') ? name : layout ? `${layout}/${name}` : name;
 
     const parsed = parseBlockData(dataPath);
+    // dataPath is always root-relative; resolve the manifest slice from the
+    // ROOT context, not `this`. For autoblock partials `this` is already the
+    // slice (or an #each item), and double-slicing would record an undefined
+    // manifest entry (breaking identical-dataset diffing / I2).
+    const root = (options && options.data && options.data.root) || this;
     const slice = dataPath
-      ? buildBlockContext(this, parsed, (data, path) => deepGet(data, path))
+      ? buildBlockContext(root, parsed, (data, path) => deepGet(data, path))
       : this;
     env.getManifest()[blockName] = slice;
 
     const partial = Handlebars.partials[blockName];
     let inner;
-    if (hasContent(slice)) {
+    if (options.hash.autoblock) {
+      // Autoblock wrapper: the raw partial body is already inline in this
+      // helper's block (`options.fn`), and `this` is the current Handlebars
+      // context (the sliced data or an #each item). Render it directly —
+      // `partial[blockName]` IS this same wrapper, so resolving it again would
+      // recurse forever.
+      inner = options.fn(this);
+    } else if (hasContent(slice)) {
       if (typeof partial === 'function') {
         inner = partial(slice, { data: options.data });
       } else if (typeof partial === 'string') {

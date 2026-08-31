@@ -105,8 +105,10 @@ export function needsRuntime(html, analysis = null) {
  * If the page uses interactive attributes (bindings, actions, class/attr toggles) or autobindings,
  * the whole dataset is returned because custom actions/computed may read arbitrary paths.
  */
-export function deriveInitialState(html, fullData, analysis = null) {
-  if (hasInteractiveAttributes(html, analysis)) {
+export function deriveInitialState(html, fullData, analysis = null, hasController = false) {
+  // A controller (or interactive attributes) may read arbitrary branches of
+  // the dataset, so the FULL dataset is inlined (see REACTIVITY §7).
+  if (hasInteractiveAttributes(html, analysis) || hasController) {
     return fullData;
   }
   const paths = extractIgnitionPaths(html);

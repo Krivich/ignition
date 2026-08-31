@@ -71,7 +71,7 @@ These principles are the measure of every change. If a feature contradicts them,
 | Criterion | Ignition | Next.js |
 |---|---|---|
 | **FCP (first load)** | 0.8–1.2s (pure HTML) | 1.5–3.0s (wait for JS + hydration) |
-| **JS bundle** | 3–5KB | 150–500KB+ (React + app) |
+| **JS bundle** | 0KB static pages · ~115KB live pages (self-hosted Handlebars + runtime) | 150–500KB+ (React + app) |
 | **Learning curve** | JSON + Handlebars (a day) | React + JSX + hooks (months) |
 | **Infrastructure** | Any static hosting | Node.js server or Vercel |
 | **Hosting cost** | $0–5/mo | $20–200+/mo |

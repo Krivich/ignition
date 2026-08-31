@@ -131,6 +131,8 @@ To opt a whole template out of auto-binding injection:
 
 For elements that only display or toggle, use point projections. They update without re-rendering the whole block.
 
+Class and attribute projections (`data-ignition-class`, `data-ignition-attr-*`) are live: they alone make the page reactive and ship the runtime. A text projection (`data-ignition-text`) is an SSR marker — it is server-rendered and does **not** trigger the runtime by itself. It updates on the next render, and only participates in live updates when the page is already reactive for another reason (a class/attr projection, a binding, pagination, or a controller).
+
 ```handlebars
 <!-- Text projection -->
 <div id="toast" data-ignition-text="ui.toastMessage"></div>
@@ -353,7 +355,7 @@ A page is considered live when the template contains any of:
 
 - `{{> ignition/pagination ...}}` — system pagination controller
 - `value="{{path}}"`, `checked="{{path}}"` or similar auto-binding patterns
-- `data-ignition-text`, `data-ignition-class`, `data-ignition-attr-*` projections
+- `data-ignition-class`, `data-ignition-attr-*` projections
 - A controller file at `input/controllers/{layout}.js`
 
 A bare `data-ignition-block` without any of the above is static SSR: the block is server-rendered once and no runtime is shipped.
@@ -394,9 +396,11 @@ The client receives the raw partial source in `__IGNITION_TEMPLATES__` so it can
 
 The build scans the compiled Handlebars output and injects `data-ignition-binding` attributes for known patterns:
 
-- `<input ... value="{{path}}">` → `data-ignition-binding="path"`
+- `<input|textarea|select ... value="{{path}}">` → `data-ignition-binding="path"`
 - `<textarea>{{path}}</textarea>` → `data-ignition-binding="path"`
-- `<select ...>` with selected option interpolation → bound to the matching state path
+- `<input type="checkbox" checked="{{path}}">` → `data-ignition-binding="path"`
+
+`<select>` binds its **value** via `value="{{path}}"` on the `<select>` element. Option-level `selected="{{...}}"` is **not** auto-detected — it only sets the SSR initial state (§4); no listener is attached for it.
 
 The runtime then attaches listeners to these elements and syncs them with the reactive state.
 

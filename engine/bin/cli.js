@@ -181,7 +181,7 @@ async function generateTemplatesJs() {
 
     const lines = ['window.__IGNITION_TEMPLATES__ = {'];
     entries.forEach((entry, i) => {
-        const escaped = entry.source.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\n/g, '\\n');
+        const escaped = entry.source.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${').replace(/\n/g, '\\n');
         const comma = i < entries.length - 1 ? ',' : '';
         lines.push(`  ${JSON.stringify(entry.name)}: \`${escaped}\`${comma}`);
     });
