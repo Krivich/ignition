@@ -227,7 +227,7 @@ export async function renderTemplate(templatePath, data, outputDir, dataset, lay
             // is live (runtime + preload injected).
             const liveController = await hasController(layout, dataset);
 
-            const renderedManifest = JSON.stringify(getManifest());
+            const renderedManifest = jsonSafe(getManifest());
             const derivedInitialData = jsonSafe(deriveInitialState(finalHtml, pureData, analysis, liveController));
             const templatesJson = jsonSafe(templateSources);
             finalHtml = finalHtml
@@ -351,6 +351,10 @@ async function registerAllTemplatePartials(templatesDir, analysis = null) {
 }
 
 async function copyCsrTemplate(layout, pageTemplate) {
+    if (!pageTemplate || /[.]{2}/.test(String(pageTemplate)) || /[^a-zA-Z0-9\-_]/.test(String(pageTemplate))) {
+        logger.warn(`⚠️ Invalid pageTemplate value for CSR copy: ${pageTemplate}`);
+        return false;
+    }
     const sourcePath = path.join(config.source.templates, layout, `${pageTemplate}.hbs`);
     const outputPath = path.join(config.output.templates, layout, `${pageTemplate}.hbs`);
 

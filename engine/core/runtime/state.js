@@ -116,6 +116,9 @@ export function createReactiveState(initialData) {
 
   state.set = function (path, value) {
     const keys = String(path).split('.');
+    if (keys.some(k => k === '__proto__' || k === 'constructor' || k === 'prototype')) {
+      throw new Error(`Refusing to set prototype-polluting path: ${path}`);
+    }
     let target = state;
     for (let i = 0; i < keys.length - 1; i++) {
       target = target[keys[i]];

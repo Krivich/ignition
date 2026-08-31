@@ -1,5 +1,10 @@
 import winston from 'winston';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import config from '../config/default.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const defaultLogFile = path.join(__dirname, '..', 'logs', 'ignition.log');
 
 const logger = winston.createLogger({
   level: config.logging.level,
@@ -14,7 +19,7 @@ const logger = winston.createLogger({
         winston.format.simple()
       )
     }),
-    new winston.transports.File({ filename: config.logging.file })
+    new winston.transports.File({ filename: defaultLogFile })
   ]
 });
 

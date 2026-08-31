@@ -11,6 +11,9 @@
     }, obj);
   }
 
+  // ========== Prototype pollution guard (shared by helpers, binding, diff) ==========
+  var DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
   // ========== parseBlockData (inlined from utils) ==========
   function parseBlockData(dataStr) {
   if (!dataStr || !dataStr.trim()) {
@@ -63,7 +66,11 @@ function getManifest() {
 }
 
 function escapeAttr(value) {
-  return String(value).replace(/"/g, '&quot;');
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 function hasContent(value) {
@@ -133,7 +140,11 @@ function registerHelpersWith(Handlebars) {
   });
 
   Handlebars.registerHelper('json', function (context) {
-    return new Handlebars.SafeString(JSON.stringify(context));
+    const str = JSON.stringify(context)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    return new Handlebars.SafeString(str);
   });
 
   Handlebars.registerHelper('eq', function (a, b) {
@@ -323,6 +334,9 @@ function registerBlockHelper(Handlebars, env) {
 
   state.set = function (path, value) {
     const keys = String(path).split('.');
+    if (keys.some(k => k === '__proto__' || k === 'constructor' || k === 'prototype')) {
+      throw new Error(`Refusing to set prototype-polluting path: ${path}`);
+    }
     let target = state;
     for (let i = 0; i < keys.length - 1; i++) {
       target = target[keys[i]];
@@ -414,8 +428,13 @@ const attrBoundElements = new WeakSet();
 const textBoundElements = new WeakSet();
 const autoBoundElements = new WeakSet();
 
+
+
 function setByPath(obj, path, value) {
   const keys = path.split('.');
+  if (keys.some(k => DANGEROUS_KEYS.has(k))) {
+    throw new Error(`Refusing to set prototype-polluting path: ${path}`);
+  }
   let current = obj;
   for (let i = 0; i < keys.length - 1; i++) {
     if (current[keys[i]] === undefined) current[keys[i]] = {};
@@ -836,8 +855,13 @@ function mergeSlices(state, changedBlockNames, blockPaths, newDataset) {
   }
 }
 
+
+
 function setByPath(obj, path, value) {
   const keys = path.split('.');
+  if (keys.some(k => DANGEROUS_KEYS.has(k))) {
+    throw new Error(`Refusing to set prototype-polluting path: ${path}`);
+  }
   let current = obj;
   for (let i = 0; i < keys.length - 1; i++) {
     if (current[keys[i]] === undefined) current[keys[i]] = {};

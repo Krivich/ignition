@@ -59,13 +59,27 @@ program.hook('preAction', (command) => {
 
     // Determine base path for output
     const outputBase = path.resolve(opts.output);
+    const sourceBase = path.resolve(opts.source);
+
+    // Security: validate that source and output are within the project root
+    const cwd = process.cwd();
+    const isInsideProject = (p) => {
+      const resolved = path.resolve(p);
+      return resolved.startsWith(cwd + path.sep) || resolved === cwd;
+    };
+    if (!isInsideProject(sourceBase)) {
+      logger.warn(`⚠️ --source "${sourceBase}" is outside the project root (${cwd}). Proceeding with caution.`);
+    }
+    if (!isInsideProject(outputBase)) {
+      logger.warn(`⚠️ --output "${outputBase}" is outside the project root (${cwd}). Proceeding with caution.`);
+    }
 
     appConfig = {
         ...appConfig,
         source: {
-            templates: path.resolve(opts.source, 'templates'),
-            data: path.resolve(opts.source, 'data'),
-            controllers: path.resolve(opts.source, 'controllers')
+            templates: path.resolve(sourceBase, 'templates'),
+            data: path.resolve(sourceBase, 'data'),
+            controllers: path.resolve(sourceBase, 'controllers')
         },
         output: {
             public: path.join(outputBase, 'public'),
@@ -74,9 +88,17 @@ program.hook('preAction', (command) => {
             data: path.join(outputBase, 'public', 'data'),
             assets: path.join(outputBase, 'public', 'assets') // <-- EXPLICITLY ADDING
         },
-        tmpDir: path.resolve(opts.source, '..', 'tmp'),
+        tmpDir: path.resolve(sourceBase, '..', 'tmp'),
         domain: opts.domain
     };
+
+    // Security: validate tmpDir is not a sensitive system directory
+    const tmpResolved = path.resolve(appConfig.tmpDir);
+    const systemDirs = ['/tmp', '/var', '/etc', '/usr', '/root', '/home'];
+    const normalizedTmp = tmpResolved.replace(/\\/g, '/');
+    if (process.platform !== 'win32' && systemDirs.some(sd => normalizedTmp === sd || normalizedTmp.startsWith(sd + '/'))) {
+        logger.warn(`⚠️ tmpDir "${tmpResolved}" points to a system directory. This may cause data loss.`);
+    }
 
     // Update global configuration
     config.source = appConfig.source;

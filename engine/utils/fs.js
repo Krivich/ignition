@@ -1,4 +1,5 @@
 import fs from 'fs/promises';
+import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import logger from './logger.js';
@@ -31,16 +32,32 @@ export async function safeMkdir(dirPath, projectRoot = process.cwd()) {
 }
 
 /**
- * Atomic file write
+ * Check that a path is contained within a given root directory.
+ * @param {string} filePath - The path to validate
+ * @param {string} rootDir - The root directory it must be inside
+ * @throws {Error} If the path escapes the root
+ */
+export function assertInsideRoot(filePath, rootDir) {
+    const resolved = path.resolve(rootDir, path.relative(rootDir, path.resolve(filePath)));
+    const safeRoot = path.resolve(rootDir);
+    if (!resolved.startsWith(safeRoot + path.sep) && resolved !== safeRoot) {
+        throw new Error(`Path escapes root directory: ${filePath} is outside ${rootDir}`);
+    }
+}
+
+/**
+ * Atomic file write using a crypto-random temp name and exclusive open.
  * @param {string} filePath - Path to file
  * @param {string|Buffer} content - Content
  * @param {object} options - Additional options
  */
 export async function atomicWrite(filePath, content, options = {}) {
-  const tmpPath = `${filePath}.tmp.${Date.now()}`;
+  const dir = path.dirname(filePath);
+  const randomSuffix = crypto.randomBytes(8).toString('hex');
+  const tmpPath = path.join(dir, `.tmp.${path.basename(filePath)}.${randomSuffix}`);
 
   try {
-    await fs.writeFile(tmpPath, content, options);
+    await fs.writeFile(tmpPath, content, { ...options, flag: 'wx' });
     await fs.rename(tmpPath, filePath);
     logger.debug(`Atomically wrote file: ${filePath}`);
   } catch (err) {
@@ -65,7 +82,10 @@ export async function safeReadJson(filePath) {
 }
 
 /**
- * Cleanup temporary files on startup
+ * Cleanup temporary files on startup.
+ * Only deletes files ending in .tmp and subdirectories that look like
+ * temporary build artefacts (contain only .tmp files), to prevent
+ * accidental deletion of real directories.
  * @param {string} tmpDir - Temporary files directory
  */
 export async function cleanupTmp(tmpDir) {
@@ -74,9 +94,14 @@ export async function cleanupTmp(tmpDir) {
     const cleanupPromises = entries.map(async (entry) => {
       const fullPath = path.join(tmpDir, entry.name);
       if (entry.isDirectory()) {
-        await fs.rm(fullPath, { recursive: true, force: true });
-      } else if (entry.name.endsWith('.tmp')) {
-        await fs.unlink(fullPath);
+        // Only delete if all children are .tmp files (build artefacts)
+        const children = await fs.readdir(fullPath);
+        const allTmp = children.every(c => c.endsWith('.tmp') || c === '.tmp');
+        if (allTmp) {
+          await fs.rm(fullPath, { recursive: true, force: true });
+        }
+      } else if (entry.name.endsWith('.tmp') || entry.name.startsWith('.tmp.')) {
+        await fs.unlink(fullPath).catch(() => {});
       }
     });
 

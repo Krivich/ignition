@@ -17,6 +17,8 @@ function inlineSource(filePath) {
   let src = fs.readFileSync(filePath, 'utf8');
   src = src.replace(/^import .*$/gm, '');
   src = src.replace(/^export /gm, '');
+  // Strip const declarations that will be provided once at the top of the IIFE
+  src = src.replace(/^const DANGEROUS_KEYS = new Set\(.*\);.*$/gm, '');
   return src.trim();
 }
 
@@ -35,6 +37,9 @@ function build() {
       return current[key] !== undefined ? current[key] : defaultValue;
     }, obj);
   }
+
+  // ========== Prototype pollution guard (shared by helpers, binding, diff) ==========
+  var DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
   // ========== parseBlockData (inlined from utils) ==========
   ${inlineSource(path.join(ROOT, 'engine', 'utils', 'parseBlockData.js'))}

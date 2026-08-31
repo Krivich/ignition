@@ -1,0 +1,74 @@
+name: Security audit
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "package.json"
+      - "package-lock.json"
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit and save report
+        id: audit
+        continue-on-error: true
+        run: |
+          npm audit --audit-level=high --json > audit-report.json || true
+          cat audit-report.json
+
+      - name: Open issue if high/critical found
+        if: always() && steps.audit.outcome == 'success'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const raw = fs.readFileSync('audit-report.json', 'utf8');
+            const r = JSON.parse(raw);
+            const v = (r.metadata && r.metadata.vulnerabilities) || {};
+            const high = (v.high || 0) + (v.critical || 0);
+            const summary = `high: ${v.high || 0}, critical: ${v.critical || 0}`;
+            if (high === 0) {
+              console.log('No high/critical vulnerabilities. ' + summary);
+              return;
+            }
+            const title = 'Dependency vulnerabilities found (high/critical)';
+            const body = 'The `npm audit --audit-level=high` check found vulnerabilities.\n\n'
+              + summary + '\n\n```json\n' + raw.slice(0, 4000) + '\n```';
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              creator: 'github-actions[bot]'
+            });
+            if (existing.some(i => i.title === title)) {
+              console.log('Issue already open, skipping.');
+              return;
+            }
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['security']
+            });
+            core.setFailed('high/critical vulnerabilities found');
+
+      - name: Summary
+        run: echo "audit step outcome: ${{ steps.audit.outcome }}"

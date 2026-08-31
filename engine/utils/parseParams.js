@@ -10,9 +10,13 @@ export function parseHandlebarsParams(paramsStr) {
     }
 
     if (params.pageTemplate) {
-        params.fullTemplatePath = params.pageTemplate;
-        params.templateName = params.pageTemplate.split('/')[0];
-        params.template = params.pageTemplate.split('/')[1];
+        const template = String(params.pageTemplate);
+        if (/[.]{2}/.test(template) || /[^a-zA-Z0-9\-_/]/.test(template)) {
+            throw new Error(`Invalid pageTemplate value: ${template}. Only alphanumeric, hyphens, underscores, slashes allowed. No path traversal.`);
+        }
+        params.fullTemplatePath = template;
+        params.templateName = template.split('/')[0];
+        params.template = template.split('/')[1];
     } else {
         params.template = params.template || 'pagination';
         params.fullTemplatePath = `${params.layout || 'catalog'}/${params.template}`;

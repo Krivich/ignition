@@ -63,8 +63,13 @@ export function mergeSlices(state, changedBlockNames, blockPaths, newDataset) {
   }
 }
 
+const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 function setByPath(obj, path, value) {
   const keys = path.split('.');
+  if (keys.some(k => DANGEROUS_KEYS.has(k))) {
+    throw new Error(`Refusing to set prototype-polluting path: ${path}`);
+  }
   let current = obj;
   for (let i = 0; i < keys.length - 1; i++) {
     if (current[keys[i]] === undefined) current[keys[i]] = {};

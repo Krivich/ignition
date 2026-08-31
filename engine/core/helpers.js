@@ -12,7 +12,11 @@ export function getManifest() {
 }
 
 function escapeAttr(value) {
-  return String(value).replace(/"/g, '&quot;');
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 function hasContent(value) {
@@ -82,7 +86,11 @@ export function registerHelpersWith(Handlebars) {
   });
 
   Handlebars.registerHelper('json', function (context) {
-    return new Handlebars.SafeString(JSON.stringify(context));
+    const str = JSON.stringify(context)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    return new Handlebars.SafeString(str);
   });
 
   Handlebars.registerHelper('eq', function (a, b) {

@@ -1,13 +1,21 @@
 import deepGet from './deepGet.js';
 
+const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 function setByPath(obj, path, value) {
   const keys = path.split('.');
   let current = obj;
   for (let i = 0; i < keys.length - 1; i++) {
+    if (DANGEROUS_KEYS.has(keys[i])) {
+      throw new Error(`Refusing to set prototype-polluting path: ${path}`);
+    }
     if (current[keys[i]] === undefined || current[keys[i]] === null) {
       current[keys[i]] = {};
     }
     current = current[keys[i]];
+  }
+  if (DANGEROUS_KEYS.has(keys[keys.length - 1])) {
+    throw new Error(`Refusing to set prototype-polluting path: ${path}`);
   }
   current[keys[keys.length - 1]] = value;
 }

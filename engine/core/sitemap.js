@@ -4,12 +4,36 @@ import { glob } from 'glob';
 import logger from '../utils/logger.js';
 import config from '../config/default.js';
 
+function escapeXml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/**
+ * Validate a domain string for use in sitemap.xml / robots.txt.
+ * @param {string} domain
+ * @returns {string} trimmed and validated domain
+ */
+function validateDomain(domain) {
+  const d = String(domain).trim();
+  if (!/^https?:\/\/[a-zA-Z0-9._-]+(:[0-9]+)?(\/.*)?$/.test(d)) {
+    logger.warn(`Sitemap domain looks unusual: ${d}. Proceeding anyway.`);
+  }
+  return d;
+}
+
 /**
  * Generate sitemap.xml
  * @param {string} domain - Domain for absolute URLs
  */
 export async function generateSitemap(domain) {
   try {
+    const safeDomain = validateDomain(domain);
+
     // Collect all HTML files
     const htmlFiles = await glob(`${config.output.html}/**/*.html`, {
       nodir: true,
@@ -26,7 +50,7 @@ export async function generateSitemap(domain) {
         .replace(/\/index$/, '/');
 
       return {
-        loc: `${domain}/${urlPath}`,
+        loc: `${escapeXml(safeDomain)}/${escapeXml(urlPath)}`,
         lastmod: now,
         changefreq: 'weekly',
         priority: urlPath === '/' ? '1.0' : '0.8'
@@ -53,7 +77,7 @@ ${urls.map(url => `
     // Generate robots.txt
     const robots = `User-agent: *
 Allow: /
-Sitemap: ${domain}/sitemap.xml`;
+Sitemap: ${escapeXml(safeDomain)}/sitemap.xml`;
 
     const robotsPath = path.join(config.output.html, 'robots.txt');
     await fs.writeFile(robotsPath, robots);
