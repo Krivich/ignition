@@ -211,6 +211,7 @@ hot. Warnings carry stable `IGN-FG-*` codes - look yours up here:
 | `IGN-FG-COND` | Conditional (`{{#if}}`) in the row body | No clean v1 fix - the condition re-shapes the row. Hoist it to the block level if possible, or accept the re-render (class/attr projections are not row-scoped yet, so they cannot replace a row-level `{{#if}}`) |
 | `IGN-FG-NESTED` | Nested `{{#each}}` | No v1 fix - extract the inner list into its own partial/block, or accept the re-render |
 | `IGN-FG-PARAM` | Root-projected partial called with a context param (`{{> list products}}`) | The row-scoped `{{#each products}}` resolves from the **state root** - a context param shifts `this` and renders an empty block. Call it without a param: `{{> list}}` |
+| `IGN-FG-BLOCK` | Auto-block partial double-wrapped in an explicit `{{#block name=...}}` | The auto-block already wraps itself - an explicit `{{#block}}` creates a second region over the same area (double bindings, double re-renders). Remove the `{{#block}}` and use the plain call: `{{> list}}`. The only exception: an explicit block with a **different** name over a partial is a separate region — that is intentional |
 
 Example warning:
 

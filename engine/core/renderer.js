@@ -375,9 +375,14 @@ const partialCache = new Map();
 async function detectAutoBlocks(templatesDir, signature) {
     if (autoBlockCache.has(signature)) return autoBlockCache.get(signature);
     const map = new Map();
+    // Explicit {{#block name=X}} calls in layouts, by their raw name — used to
+    // warn when an author double-wraps an auto-block partial (the auto-block
+    // already wraps itself). Keyed: rawName -> layout that calls it.
+    const blockWrapCalls = new Map();
     const templateDirs = await fs.readdir(templatesDir, { withFileTypes: true });
     for (const entry of templateDirs) {
         if (!entry.isFile() || !entry.name.endsWith('.hbs')) continue;
+        const layoutName = path.basename(entry.name, '.hbs');
         const src = await fs.readFile(path.join(templatesDir, entry.name), 'utf8');
         const a = analyzeTemplate(src);
         if (a.hasNoblock) continue;
@@ -386,9 +391,15 @@ async function detectAutoBlocks(templatesDir, signature) {
                 map.set(p.partialName, { dataPath: p.dataPath, depends: p.depends });
             }
         }
+        // Raw explicit {{#block name=...}} helpers (autoblock wrappers have
+        // autoblock=1 and are filtered out by name extraction).
+        for (const m of src.match(/\{\{#block\s+name="([^"]+)"\s*[^}]*\}\}/g) || []) {
+            const rawName = /name="([^"]+)"/.exec(m)[1];
+            if (!blockWrapCalls.has(rawName)) blockWrapCalls.set(rawName, layoutName);
+        }
     }
-    autoBlockCache.set(signature, map);
-    return map;
+    autoBlockCache.set(signature, { map, blockWrapCalls });
+    return { map, blockWrapCalls };
 }
 
 async function registerAllTemplatePartials(templatesDir, analysis = null) {
@@ -408,7 +419,8 @@ async function registerAllTemplatePartials(templatesDir, analysis = null) {
 async function registerAllTemplatePartialsUncached(templatesDir, signature) {
     const sources = {};
     try {
-        const autoBlocks = await detectAutoBlocks(templatesDir, signature);
+        const { map: autoBlockMap, blockWrapCalls } = await detectAutoBlocks(templatesDir, signature);
+        const autoBlocks = autoBlockMap;
         const templateDirs = await fs.readdir(templatesDir, { withFileTypes: true });
 
         for (const dir of templateDirs) {
@@ -458,6 +470,33 @@ async function registerAllTemplatePartialsUncached(templatesDir, signature) {
                                     `calling this partial with a context param ({{> ${fullName} ${autoBlock.dataPath}}}) ` +
                                     `shifts the context and renders an empty block. ` +
                                     `Call it without a param: {{> ${fullName}}}. [IGN-FG-PARAM]`
+                                );
+                            }
+
+                            // Predictable error: an explicit {{#block name=...}} in
+                            // a layout that resolves to THIS auto-block partial
+                            // double-wraps it — the runtime binds the same region
+                            // twice (double subscriptions, double patches). Tell the
+                            // author to just use the plain partial call.
+                            const rawTail = fullName.includes('/') ? fullName.split('/').pop() : null;
+                            let blockOwner;
+                            let rawNameUsed;
+                            if (blockWrapCalls.has(fullName)) {
+                                blockOwner = blockWrapCalls.get(fullName);
+                                rawNameUsed = fullName;
+                            } else if (rawTail) {
+                                const owner = blockWrapCalls.get(rawTail);
+                                if (owner === fullName.split('/')[0]) {
+                                    blockOwner = owner;
+                                    rawNameUsed = rawTail;
+                                }
+                            }
+                            if (blockOwner) {
+                                logger.warn(
+                                    `⚠️ ${fullName}: layout "${blockOwner}" wraps this auto-block partial in an ` +
+                                    `explicit {{#block name="${rawNameUsed}"}} — the partial is already a block ` +
+                                    `on its own, so this double-wraps it (double bindings, double re-renders). ` +
+                                    `Remove the {{#block}} and use the plain call: {{> ${fullName}}}. [IGN-FG-BLOCK]`
                                 );
                             }
 

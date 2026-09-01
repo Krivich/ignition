@@ -586,4 +586,113 @@ describe('E7. Авто-блок для корневого {{#each}} (fine) — d
       await fs.rm(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it('IGN-FG-BLOCK: ручной {{#block}} вокруг авто-блок партиала (по полному имени) предупреждается', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(projectRoot, 'tmp', 'ignition-e7-'));
+    try {
+      config.source.templates = path.join(tmpDir, 'input', 'templates');
+      config.source.data = path.join(tmpDir, 'input', 'data');
+      config.source.controllers = path.join(tmpDir, 'input', 'controllers');
+      config.output.html = path.join(tmpDir, 'output', 'public');
+      config.output.data = path.join(tmpDir, 'output', 'public', 'data');
+      config.output.templates = path.join(tmpDir, 'output', 'public', 'templates');
+      config.output.assets = path.join(tmpDir, 'output', 'public', 'assets');
+
+      const templatesDir = config.source.templates;
+      const layout = `<!DOCTYPE html>
+<html>
+<head></head>
+<body>{{#block name="epl/list"}}{{> epl/list}}{{/block}}</body></html>`;
+      const listPartial = `{{#each products}}<div class="row"><span class="n">{{name}}</span></div>{{/each}}`;
+      await fs.mkdir(path.join(templatesDir, 'epl'), { recursive: true });
+      await fs.writeFile(path.join(templatesDir, 'epl.hbs'), layout);
+      await fs.writeFile(path.join(templatesDir, 'epl', 'list.hbs'), listPartial);
+
+      const loggerWarn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const outputDir = path.join(config.output.html, 'epl');
+      await renderTemplate(path.join(templatesDir, 'epl.hbs'), {
+        products: [{ name: 'A' }, { name: 'B' }],
+        layout: 'epl',
+        dataset: 'main',
+      }, outputDir, 'main', 'epl');
+
+      const warned = loggerWarn.mock.calls.some((call) => call[0] && call[0].includes('IGN-FG-BLOCK'));
+      loggerWarn.mockRestore();
+      expect(warned).toBe(true);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('IGN-FG-BLOCK: короткое имя в layout резолвится в полное (layout/name)', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(projectRoot, 'tmp', 'ignition-e7-'));
+    try {
+      config.source.templates = path.join(tmpDir, 'input', 'templates');
+      config.source.data = path.join(tmpDir, 'input', 'data');
+      config.source.controllers = path.join(tmpDir, 'input', 'controllers');
+      config.output.html = path.join(tmpDir, 'output', 'public');
+      config.output.data = path.join(tmpDir, 'output', 'public', 'data');
+      config.output.templates = path.join(tmpDir, 'output', 'public', 'templates');
+      config.output.assets = path.join(tmpDir, 'output', 'public', 'assets');
+
+      const templatesDir = config.source.templates;
+      const layout = `<!DOCTYPE html>
+<html>
+<head></head>
+<body>{{#block name="list"}}{{> epl/list}}{{/block}}</body></html>`;
+      const listPartial = `{{#each products}}<div class="row"><span class="n">{{name}}</span></div>{{/each}}`;
+      await fs.mkdir(path.join(templatesDir, 'epl'), { recursive: true });
+      await fs.writeFile(path.join(templatesDir, 'epl.hbs'), layout);
+      await fs.writeFile(path.join(templatesDir, 'epl', 'list.hbs'), listPartial);
+
+      const loggerWarn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const outputDir = path.join(config.output.html, 'epl');
+      await renderTemplate(path.join(templatesDir, 'epl.hbs'), {
+        products: [{ name: 'A' }, { name: 'B' }],
+        layout: 'epl',
+        dataset: 'main',
+      }, outputDir, 'main', 'epl');
+
+      const warned = loggerWarn.mock.calls.some((call) => call[0] && call[0].includes('IGN-FG-BLOCK'));
+      loggerWarn.mockRestore();
+      expect(warned).toBe(true);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('IGN-FG-BLOCK: обычный ручной {{#block}} без авто-блок партиала — без предупреждения', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(projectRoot, 'tmp', 'ignition-e7-'));
+    try {
+      config.source.templates = path.join(tmpDir, 'input', 'templates');
+      config.source.data = path.join(tmpDir, 'input', 'data');
+      config.source.controllers = path.join(tmpDir, 'input', 'controllers');
+      config.output.html = path.join(tmpDir, 'output', 'public');
+      config.output.data = path.join(tmpDir, 'output', 'public', 'data');
+      config.output.templates = path.join(tmpDir, 'output', 'public', 'templates');
+      config.output.assets = path.join(tmpDir, 'output', 'public', 'assets');
+
+      const templatesDir = config.source.templates;
+      await fs.mkdir(path.join(templatesDir, 'epl'), { recursive: true });
+      const layout = `<!DOCTYPE html>
+<html>
+<head></head>
+<body>{{#block name="hero"}}<h1>Приивет</h1>{{/block}}</body></html>`;
+      await fs.writeFile(path.join(templatesDir, 'epl.hbs'), layout);
+
+      const loggerWarn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const outputDir = path.join(config.output.html, 'epl');
+      await renderTemplate(path.join(templatesDir, 'epl.hbs'), {
+        products: [{ name: 'A' }, { name: 'B' }],
+        layout: 'epl',
+        dataset: 'main',
+      }, outputDir, 'main', 'epl');
+
+      const warned = loggerWarn.mock.calls.some((call) => call[0] && call[0].includes('IGN-FG-BLOCK'));
+      loggerWarn.mockRestore();
+      expect(warned).toBe(false);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
