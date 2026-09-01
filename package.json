@@ -3,6 +3,14 @@
   "version": "1.0.0",
   "description": "Atomic prerender engine for SSR/CSR content",
   "main": "engine/bin/cli.js",
+  "exports": {
+    ".": "./engine/bin/cli.js",
+    "./renderer": "./engine/core/renderer.js",
+    "./helpers": "./engine/core/helpers.js",
+    "./runtime": "./engine/core/runtime/index.js",
+    "./runtime-iife": "./engine/core/assets/ignition-runtime.js",
+    "./config": "./engine/config/default.js"
+  },
   "type": "module",
   "scripts": {
     "build": "node engine/bin/cli.js build",
