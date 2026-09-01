@@ -318,21 +318,51 @@ export function applyProjections(templateSource, { scopedOnly = false, onFine = 
   return out;
 }
 
-// Human-readable reasons why a list lost fine-grained updates. Specific
+// Human-readable reasons why a list lost fine-grained updates, each with a
+// stable IGN-FG-* code that is searchable in the documentation. Specific
 // causes first; the generic coverage message only when nothing specific
 // applies (the body is structurally fine but expressions are not stickers).
+const FG_CODES = {
+  COND: 'IGN-FG-COND',
+  NESTED: 'IGN-FG-NESTED',
+  ELSE: 'IGN-FG-ELSE',
+  THIS: 'IGN-FG-THIS',
+  UPLEVEL: 'IGN-FG-UPLEVEL',
+  HELPER: 'IGN-FG-HELPER',
+  MULTITOP: 'IGN-FG-MULTITOP',
+  EXPR: 'IGN-FG-EXPR',
+};
+
 function diagnoseEachBody(body, projected) {
   const reasons = [];
-  if (/\{\{#(?:if|unless)\b/.test(body)) reasons.push('conditional ({{#if}}/{{#unless}}) inside the row body');
-  if (/\{\{#each\b/.test(body)) reasons.push('nested {{#each}}');
-  if (/\{\{else\b/.test(body)) reasons.push('{{else}} branch');
   const exprs = body.match(/\{\{[^}]*\}\}/g) || [];
-  if (exprs.some((e) => /^\{\{\s*(this|\.)\s*\}\}$/.test(e))) reasons.push('{{this}}');
-  if (exprs.some((e) => e.includes('../') || e.includes('@'))) reasons.push('parent/@-paths ({{../x}}, {{@index}})');
-  if (exprs.some((e) => /[\s()]/.test(e.slice(2, -2).trim()))) reasons.push('helper calls');
-  if (!projected && !singleTopLevelTag(body)) reasons.push('several top-level elements per row');
+  if (/\{\{#(?:if|unless)\b/.test(body)) {
+    reasons.push({ code: FG_CODES.COND, text: 'conditional ({{#if}}/{{#unless}}) inside the row body' });
+  }
+  if (/\{\{#each\b/.test(body)) {
+    reasons.push({ code: FG_CODES.NESTED, text: 'nested {{#each}}' });
+  }
+  if (/\{\{else\b/.test(body)) {
+    reasons.push({ code: FG_CODES.ELSE, text: '{{else}} branch' });
+  }
+  if (exprs.some((e) => /^\{\{\s*(this|\.)\s*\}\}$/.test(e))) {
+    reasons.push({ code: FG_CODES.THIS, text: '{{this}}' });
+  }
+  if (exprs.some((e) => e.includes('../') || e.includes('@'))) {
+    reasons.push({ code: FG_CODES.UPLEVEL, text: 'parent/@-paths ({{../x}}, {{@index}})' });
+  }
+  if (exprs.some((e) => {
+    const inner = e.slice(2, -2).trim();
+    if (/^[#^\/]/.test(inner)) return false;
+    return /[\s()]/.test(inner);
+  })) {
+    reasons.push({ code: FG_CODES.HELPER, text: 'helper calls' });
+  }
+  if (!projected && !singleTopLevelTag(body)) {
+    reasons.push({ code: FG_CODES.MULTITOP, text: 'several top-level elements per row' });
+  }
   if (reasons.length === 0 && projected) {
-    reasons.push('expressions that cannot become stickers (multi-expression nodes)');
+    reasons.push({ code: FG_CODES.EXPR, text: 'multi-expression nodes (split into elements with a single {{expr}} each)' });
   }
   return reasons;
 }

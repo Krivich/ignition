@@ -212,12 +212,14 @@ export function _clearTemplateCache() { templateContextCache.clear(); }
 
 // Build-time diagnostics: a list that lost fine-grained updates degrades to a
 // full block re-render on every cell change - tell the author why, once per
-// template (the projection is cached, so this fires on first compile).
+// template (the projection is cached, so this fires on first compile). Every
+// reason carries a stable IGN-FG-* code, searchable in REACTIVITY.md §5.
 function warnLostFineGrained(templateName, items) {
   for (const { collection, reasons } of items) {
+    const detail = reasons.map((r) => `[${r.code}] ${r.text}`).join('; ');
     logger.warn(
-      `⚠️ ${templateName}: list "${collection}" re-renders its block on every cell change — ${reasons.join('; ')}. ` +
-      `Keep the row body to simple fields ({{field}}) for fine-grained point updates.`
+      `⚠️ ${templateName}: list "${collection}" re-renders its block on every cell change — ${detail}. ` +
+      `Fix recipes: REACTIVITY.md §5, "Fixing fine-grained warnings".`
     );
   }
 }

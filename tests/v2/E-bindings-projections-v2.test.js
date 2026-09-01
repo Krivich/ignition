@@ -370,42 +370,68 @@ describe('E5/E6: автопроекции (data-ignition-text из {{expr}} в �
       expect(diags(`{{#each items}}<div><span>{{name}}</span></div>{{/each}}`)).toEqual([]);
     });
 
-    it('{{#if}} в теле — предупреждение с причиной', () => {
+    it('{{#if}} в теле — предупреждение с кодом IGN-FG-COND', () => {
       const d = diags(`{{#each items}}<div>{{#if flag}}<span>{{name}}</span>{{/if}}</div>{{/each}}`);
       expect(d.length).toBe(1);
       expect(d[0].collection).toBe('items');
-      expect(d[0].reasons.some((r) => /if/i.test(r))).toBe(true);
+      expect(d[0].reasons).toEqual([
+        { code: 'IGN-FG-COND', text: expect.stringMatching(/conditional/i) },
+      ]);
     });
 
-    it('мульти-выражение — предупреждение', () => {
+    it('мульти-выражение — предупреждение с кодом IGN-FG-EXPR', () => {
       const d = diags(`{{#each items}}<div><span>{{a}} {{b}}</span></div>{{/each}}`);
-      expect(d.length).toBe(1);
-      expect(d[0].reasons.some((r) => /multi|expression/i.test(r))).toBe(true);
+      expect(d[0].reasons).toEqual([
+        { code: 'IGN-FG-EXPR', text: expect.stringMatching(/multi-expression/i) },
+      ]);
     });
 
-    it('вложенный each — предупреждение', () => {
+    it('вложенный each — IGN-FG-NESTED', () => {
       const d = diags(`{{#each a}}<div>{{#each b}}<span>{{x}}</span>{{/each}}</div>{{/each}}`);
-      expect(d.length).toBe(1);
       expect(d[0].collection).toBe('a');
-      expect(d[0].reasons.some((r) => /each/i.test(r))).toBe(true);
+      expect(d[0].reasons.some((r) => r.code === 'IGN-FG-NESTED')).toBe(true);
     });
 
-    it('несколько top-level узлов — предупреждение', () => {
+    it('несколько top-level узлов — IGN-FG-MULTITOP', () => {
       const d = diags(`{{#each items}}<li>{{a}}</li><li>{{b}}</li>{{/each}}`);
-      expect(d.length).toBe(1);
-      expect(d[0].reasons.some((r) => /top-level|element/i.test(r))).toBe(true);
+      expect(d[0].reasons.some((r) => r.code === 'IGN-FG-MULTITOP')).toBe(true);
     });
 
-    it('хелпер и {{this}} — предупреждение', () => {
+    it('хелпер — IGN-FG-HELPER; {{this}} — IGN-FG-THIS', () => {
       const dHelper = diags(`{{#each items}}<div><span>{{upper name}}</span></div>{{/each}}`);
       const dThis = diags(`{{#each items}}<div><span>{{this}}</span></div>{{/each}}`);
-      expect(dHelper.length).toBe(1);
-      expect(dThis.length).toBe(1);
+      expect(dHelper[0].reasons.some((r) => r.code === 'IGN-FG-HELPER')).toBe(true);
+      expect(dThis[0].reasons.some((r) => r.code === 'IGN-FG-THIS')).toBe(true);
     });
 
-    it('{{else}} — предупреждение', () => {
+    it('../ и @-пути — IGN-FG-UPLEVEL', () => {
+      const d = diags(`{{#each items}}<div><span>{{../title}}</span></div>{{/each}}`);
+      expect(d[0].reasons.some((r) => r.code === 'IGN-FG-UPLEVEL')).toBe(true);
+    });
+
+    it('{{else}} — IGN-FG-ELSE', () => {
       const d = diags(`{{#each items}}<li>{{a}}</li>{{else}}<li>empty</li>{{/each}}`);
-      expect(d.length).toBe(1);
+      expect(d[0].reasons.some((r) => r.code === 'IGN-FG-ELSE')).toBe(true);
+    });
+
+    it('все коды в формате IGN-FG-*', () => {
+      for (const tpl of [
+        `{{#each items}}<div>{{#if flag}}<span>{{name}}</span>{{/if}}</div>{{/each}}`,
+        `{{#each items}}<div><span>{{a}} {{b}}</span></div>{{/each}}`,
+        `{{#each a}}<div>{{#each b}}<span>{{x}}</span>{{/each}}</div>{{/each}}`,
+        `{{#each items}}<li>{{a}}</li><li>{{b}}</li>{{/each}}`,
+        `{{#each items}}<div><span>{{upper name}}</span></div>{{/each}}`,
+        `{{#each items}}<div><span>{{this}}</span></div>{{/each}}`,
+        `{{#each items}}<div><span>{{../title}}</span></div>{{/each}}`,
+        `{{#each items}}<li>{{a}}</li>{{else}}<li>empty</li>{{/each}}`,
+      ]) {
+        for (const item of diags(tpl)) {
+          for (const r of item.reasons) {
+            expect(r.code).toMatch(/^IGN-FG-[A-Z]+$/);
+            expect(r.text).toBeTruthy();
+          }
+        }
+      }
     });
 
     it('контекстный {{#each this}} — не предупреждение (штатный паттерн срезов)', () => {

@@ -176,19 +176,27 @@ their DOM identity (focus, input values, scroll) across structural changes.
 
 A build warning means the list still works - it just re-renders its block on
 every cell change. The degradation is safe; fix the template when the list is
-hot. Recipes per warning reason:
+hot. Warnings carry stable `IGN-FG-*` codes - look yours up here:
 
-| Warning reason | Fix |
-|----------------|-----|
-| Multi-expression nodes | Split into single-expression elements: `<span>{{a}}</span> <span>{{b}}</span>`; move static text (`Total: `) into its own element |
-| Helper calls (`{{upper name}}`) | Precompute the derived field in data or the controller (`item.nameUpper`), project the plain field |
-| `{{this}}` | Use object items (`{ name: x }`) instead of scalars, project `{{name}}` |
-| `{{../x}}` parent paths | The field is the same for every row - hoist it out of the list, render once above it |
-| `{{@index}}` | Replace numbering with CSS counters (`counter-reset`/`counter-increment`) - pure CSS, no state |
-| `{{else}}` branch | Hoist the empty state to the block level: wrap the list in `{{#if items.length}}...{{else}}...{{/if}}` (structural changes still re-render and flip it) |
-| Several top-level elements per row | Wrap the row content in one container element (`div`/`li`/`tr`) |
-| Conditional (`{{#if}}`) in the row body | No clean v1 fix - the condition re-shapes the row. Hoist it to the block level if possible, or accept the re-render (class/attr projections are not row-scoped yet, so they cannot replace a row-level `{{#if}}`) |
-| Nested `{{#each}}` | No v1 fix - extract the inner list into its own partial/block, or accept the re-render |
+| Code | Warning reason | Fix |
+|------|----------------|-----|
+| `IGN-FG-EXPR` | Multi-expression nodes | Split into single-expression elements: `<span>{{a}}</span> <span>{{b}}</span>`; move static text (`Total: `) into its own element |
+| `IGN-FG-HELPER` | Helper calls (`{{upper name}}`) | Precompute the derived field in data or the controller (`item.nameUpper`), project the plain field |
+| `IGN-FG-THIS` | `{{this}}` | Use object items (`{ name: x }`) instead of scalars, project `{{name}}` |
+| `IGN-FG-UPLEVEL` | `{{../x}}` parent paths, `{{@index}}` | The field is the same for every row - hoist it out of the list, render once above it; replace `@index` numbering with CSS counters (`counter-reset`/`counter-increment`) - pure CSS, no state |
+| `IGN-FG-ELSE` | `{{else}}` branch | Hoist the empty state to the block level: wrap the list in `{{#if items.length}}...{{else}}...{{/if}}` (structural changes still re-render and flip it) |
+| `IGN-FG-MULTITOP` | Several top-level elements per row | Wrap the row content in one container element (`div`/`li`/`tr`) |
+| `IGN-FG-COND` | Conditional (`{{#if}}`) in the row body | No clean v1 fix - the condition re-shapes the row. Hoist it to the block level if possible, or accept the re-render (class/attr projections are not row-scoped yet, so they cannot replace a row-level `{{#if}}`) |
+| `IGN-FG-NESTED` | Nested `{{#each}}` | No v1 fix - extract the inner list into its own partial/block, or accept the re-render |
+
+Example warning:
+
+```
+warn: ⚠️ form/contact: list "form.fields" re-renders its block on every cell change —
+  [IGN-FG-COND] conditional ({{#if}}/{{#unless}}) inside the row body;
+  [IGN-FG-UPLEVEL] parent/@-paths ({{../x}}, {{@index}}); [IGN-FG-HELPER] helper calls.
+  Fix recipes: REACTIVITY.md §5, "Fixing fine-grained warnings".
+```
 
 ## 6. Controller
 
