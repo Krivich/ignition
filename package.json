@@ -24,7 +24,7 @@
     "p-queue": "^7.3.4",
     "p-retry": "^5.1.1",
     "picomatch": "^3.0.2",
-    "winston": "^3.10.0"
+    "winston": "^3.19.0"
   },
   "engines": {
     "node": ">=18.0.0"
