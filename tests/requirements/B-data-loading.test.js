@@ -30,6 +30,11 @@ describe('B. Page weight and data loading (real engine)', () => {
     tmpDir = await fs.mkdtemp(path.join(projectRoot, 'tmp', 'ignition-b-'));
     config.source.templates = path.join(tmpDir, 'input', 'templates');
     config.source.data = path.join(tmpDir, 'input', 'data');
+    // Isolate the controllers dir too: hasController() gates liveness on the
+    // controller filesystem, and a controller present in the real project's
+    // input/controllers would turn this scaffolded page "live" and inline the
+    // full dataset, breaking B3's no-secret-leak assertion.
+    config.source.controllers = path.join(tmpDir, 'input', 'controllers');
     config.output.html = path.join(tmpDir, 'output', 'public');
     config.output.data = path.join(tmpDir, 'output', 'public', 'data');
     config.output.templates = path.join(tmpDir, 'output', 'public', 'templates');

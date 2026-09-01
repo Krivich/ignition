@@ -97,7 +97,7 @@ ignition/
 └── README.md                       # Project overview
 ```
 
-**Total: 397 tests across 45 test files (as of 2026-09-01)**
+**Total: 400 tests across 46 test files (as of 2026-09-01)**
 
 ## Technologies
 
