@@ -435,12 +435,38 @@ async function registerAllTemplatePartialsUncached(templatesDir, signature) {
                         const autoBlock = autoBlocks.get(fullName);
 
                         if (autoBlock) {
+                            // Row-scoped {{#each <rootPath>}} (fine coverage
+                            // non-empty) resolves its @p stickers from the STATE
+                            // ROOT, so the block MUST NOT slice context: keep
+                            // root by dropping dataPath. Its depends are the
+                            // covered collections so structural changes (push/
+                            // splice on that path) re-render the block, while
+                            // leaf changes patch cells via stickers.
+                            const rootProjected = Boolean(fine && fine.size);
+                            const dataPath = rootProjected ? '' : autoBlock.dataPath;
+                            const depends = rootProjected
+                                ? [...fine].join(', ')
+                                : autoBlock.depends;
+
+                            // Predictable error: a root-projected partial called
+                            // with a context param (`{{> list products}}`) shifts
+                            // `this`, so `{{#each products}}` renders nothing and
+                            // the block comes out empty. Tell the author.
+                            if (rootProjected && autoBlock.dataPath) {
+                                logger.warn(
+                                    `⚠️ ${fullName}: row-scoped {{#each}} resolves from the state root — ` +
+                                    `calling this partial with a context param ({{> ${fullName} ${autoBlock.dataPath}}}) ` +
+                                    `shifts the context and renders an empty block. ` +
+                                    `Call it without a param: {{> ${fullName}}}. [IGN-FG-PARAM]`
+                                );
+                            }
+
                             // Wrap partial with reflection attributes for SSR block rendering
                             const wrappedContent = wrapPartialWithReflection(
                                 transformedContent,
                                 fullName,
-                                autoBlock.dataPath,
-                                autoBlock.depends,
+                                dataPath,
+                                depends,
                                 fine
                             );
                             Handlebars.registerPartial(fullName, wrappedContent);

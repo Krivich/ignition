@@ -1,5 +1,6 @@
 window.ignition.controller(function (state, api) {
   var bumpBtn = document.getElementById('bumpBtn');
+  var addBtn = document.getElementById('addBtn');
   var resetBtn = document.getElementById('resetBtn');
 
   function flashPrice() {
@@ -12,6 +13,12 @@ window.ignition.controller(function (state, api) {
     state.products[i].price += 1;
     state.log.msg = 'products[' + i + '].price -> ' + state.products[i].price + ' (точечное обновление)';
     flashPrice();
+  });
+
+  addBtn.addEventListener('click', function () {
+    var n = state.products.length + 1;
+    state.products.push({ id: n, name: 'Товар ' + n, price: n * 1000 });
+    state.log.msg = 'добавлен products[' + (n - 1) + '] (структурное: ре-рендер блока)';
   });
 
   resetBtn.addEventListener('click', function () {

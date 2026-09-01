@@ -116,4 +116,23 @@ describe('fine-grained row projections in a real browser', () => {
     expect(parseInt(after[diffs[0]], 10)).toBe(parseInt(before[diffs[0]], 10) + 1);
     await page.close();
   });
+
+  it('структурный add: блок ре-рендерится (появляется новая строка), существующие ячейки целы', async () => {
+    const page = await browser.newPage();
+    await page.goto(`${baseUrl}/demo/app.html`);
+    await page.waitForLoadState('networkidle');
+
+    // Auto-block subscribes structural-only to products (data-ignition-fine).
+    await page.click('#addBtn');
+    await page.waitForFunction(() => document.querySelectorAll('.product').length === 6);
+
+    const rows = await page.locator('.product').count();
+    expect(rows).toBe(6);
+
+    // Existing SSR rows keep their exact values - the block re-render did not
+    // clobber the fine-grained stickers.
+    const firstRow = await page.locator('.product').first().locator('.p-price').textContent();
+    expect(firstRow).toBe('59990');
+    await page.close();
+  });
 });

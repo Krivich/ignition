@@ -27,16 +27,12 @@
   </p>
 
   <section class="list">
-    {{#each products}}
-    <div class="product">
-      <span class="p-name">{{name}}</span>
-      <span class="p-price">{{price}}</span>
-    </div>
-    {{/each}}
+    {{> demo/product-list}}
   </section>
 
   <div class="controls">
     <button id="bumpBtn" type="button">Цена +1 (точечное)</button>
+    <button id="addBtn" type="button">Добавить товар (структурное)</button>
     <button id="resetBtn" type="button">Сброс</button>
   </div>
 

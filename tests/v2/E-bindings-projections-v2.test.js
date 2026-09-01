@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vitest';
 import path from 'path';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
@@ -8,6 +8,7 @@ import { initBinding } from '../../engine/core/runtime/binding.js';
 import { applyProjections } from '../../engine/core/compiler.js';
 import config from '../../engine/config/default.js';
 import { renderTemplate } from '../../engine/core/renderer.js';
+import logger from '../../engine/utils/logger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..', '..');
@@ -487,6 +488,101 @@ describe('E5/E6: автопроекции (data-ignition-text из {{expr}} в �
     } finally {
       config.source = originalConfig.source;
       config.output = originalConfig.output;
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('E7. Авто-блок для корневого {{#each}} (fine) — data="" и depends от коллекции', () => {
+  let originalConfig;
+
+  beforeAll(() => {
+    originalConfig = { source: { ...config.source }, output: { ...config.output } };
+  });
+
+  afterAll(() => {
+    config.source = originalConfig.source;
+    config.output = originalConfig.output;
+  });
+
+  it('SSR: партиал с корневым {{#each products}} получает depends=products (структурный ре-рендер)', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(projectRoot, 'tmp', 'ignition-e7-'));
+    try {
+      config.source.templates = path.join(tmpDir, 'input', 'templates');
+      config.source.data = path.join(tmpDir, 'input', 'data');
+      config.source.controllers = path.join(tmpDir, 'input', 'controllers');
+      config.output.html = path.join(tmpDir, 'output', 'public');
+      config.output.data = path.join(tmpDir, 'output', 'public', 'data');
+      config.output.templates = path.join(tmpDir, 'output', 'public', 'templates');
+      config.output.assets = path.join(tmpDir, 'output', 'public', 'assets');
+
+      const templatesDir = config.source.templates;
+      const layout = `<!DOCTYPE html>
+<html>
+<head><script>window.__IGNITION_INITIAL_DATA__ = {{{initialData}}};</script></head>
+<body>{{> epl/list}}</body></html>`;
+      const listPartial = `{{#each products}}<div class="row"><span class="n">{{name}}</span><span class="p">{{price}}</span></div>{{/each}}`;
+      await fs.mkdir(path.join(templatesDir, 'epl'), { recursive: true });
+      await fs.writeFile(path.join(templatesDir, 'epl.hbs'), layout);
+      await fs.writeFile(path.join(templatesDir, 'epl', 'list.hbs'), listPartial);
+
+      const outputDir = path.join(config.output.html, 'epl');
+      const loggerWarn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      await renderTemplate(path.join(templatesDir, 'epl.hbs'), {
+        products: [{ name: 'A', price: '1' }, { name: 'B', price: '2' }],
+        layout: 'epl',
+        dataset: 'main',
+      }, outputDir, 'main', 'epl');
+      loggerWarn.mockRestore();
+
+      const html = await fs.readFile(path.join(outputDir, 'main.html'), 'utf8');
+      // Root-path each → auto-block MUST NOT slice context (no data attr), and
+      // must depend on the covered collection so structural adds re-render.
+      expect(html).toContain('data-ignition-block="epl/list"');
+      expect(html).not.toContain('data-ignition-data=');
+      expect(html).toContain('data-ignition-depends="products"');
+      expect(html).toContain('data-ignition-fine="products"');
+      // Row projections still stamped (SSR rows + @p stickers).
+      expect(html).toContain('<div class="row" data-ignition-row="products">');
+      expect(html).toContain('data-ignition-text="@p:products.*.price"');
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('IGN-FG-PARAM: root-проецированный партиал с контекст-параметром предупреждается', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(projectRoot, 'tmp', 'ignition-e7-'));
+    try {
+      config.source.templates = path.join(tmpDir, 'input', 'templates');
+      config.source.data = path.join(tmpDir, 'input', 'data');
+      config.source.controllers = path.join(tmpDir, 'input', 'controllers');
+      config.output.html = path.join(tmpDir, 'output', 'public');
+      config.output.data = path.join(tmpDir, 'output', 'public', 'data');
+      config.output.templates = path.join(tmpDir, 'output', 'public', 'templates');
+      config.output.assets = path.join(tmpDir, 'output', 'public', 'assets');
+
+      const templatesDir = config.source.templates;
+      const layout = `<!DOCTYPE html>
+<html>
+<head></head>
+<body>{{> epl/list products}}</body></html>`;
+      const listPartial = `{{#each products}}<div class="row"><span class="n">{{name}}</span></div>{{/each}}`;
+      await fs.mkdir(path.join(templatesDir, 'epl'), { recursive: true });
+      await fs.writeFile(path.join(templatesDir, 'epl.hbs'), layout);
+      await fs.writeFile(path.join(templatesDir, 'epl', 'list.hbs'), listPartial);
+
+      const loggerWarn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const outputDir = path.join(config.output.html, 'epl');
+      await renderTemplate(path.join(templatesDir, 'epl.hbs'), {
+        products: [{ name: 'A' }, { name: 'B' }],
+        layout: 'epl',
+        dataset: 'main',
+      }, outputDir, 'main', 'epl');
+
+      const warned = loggerWarn.mock.calls.some((call) => call[0] && call[0].includes('IGN-FG-PARAM'));
+      loggerWarn.mockRestore();
+      expect(warned).toBe(true);
+    } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
     }
   });
