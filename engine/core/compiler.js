@@ -185,6 +185,71 @@ export function collectRootSignals(templateSource) {
 }
 
 /**
+ * Collect the collection paths of ROOT-context {{#each}} statements.
+ * Descendant each/with/block shift the context — their paths are per-item
+ * and are masked out. A container partial (each body = nested partial call)
+ * has no fine coverage, so these paths are what the block can subscribe to.
+ *
+ * @param {string} templateSource
+ * @returns {string[]}
+ */
+export function collectEachPaths(templateSource) {
+  const paths = [];
+  const seen = new Set();
+  let contextShifts = 0;
+
+  function walk(node) {
+    if (!node) return;
+
+    if (node.type === 'BlockStatement') {
+      const path = node.path.original;
+      const param = node.params && node.params[0];
+
+      if (path === 'each' && contextShifts === 0 && param && param.type === 'PathExpression' && param.original !== 'this') {
+        if (!seen.has(param.original)) {
+          seen.add(param.original);
+          paths.push(param.original);
+        }
+        contextShifts++;
+        walkChildren(node);
+        contextShifts--;
+        return;
+      }
+
+      if (path === 'each' || path === 'with' || path === 'block') {
+        contextShifts++;
+        walkChildren(node);
+        contextShifts--;
+        return;
+      }
+
+      walkChildren(node);
+      return;
+    }
+
+    walkChildren(node);
+  }
+
+  function walkChildren(node) {
+    if (node.body) {
+      if (Array.isArray(node.body)) node.body.forEach(walk);
+      else walk(node.body);
+    }
+    if (node.program) {
+      if (Array.isArray(node.program.body)) node.program.body.forEach(walk);
+      else walk(node.program.body);
+    }
+    if (node.inverse) {
+      if (Array.isArray(node.inverse.body)) node.inverse.body.forEach(walk);
+      else walk(node.inverse.body);
+    }
+  }
+
+  walk(Handlebars.parse(templateSource));
+  return paths;
+}
+
+/**
  * Collect autobindings from template source.
  * Detects value="{{path}}" and checked="{{path}}" patterns.
  * 

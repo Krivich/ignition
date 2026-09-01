@@ -18,7 +18,7 @@ import { paginateCollection, preparePageData } from './pagination.js';
 import { resetManifest, getManifest } from './helpers.js';
 import { deriveInitialState, needsRuntime } from '../utils/deriveInitialState.js';
 import { fineCoverage, blockSignals } from './fineRegistry.js';
-import { analyzeTemplate, applyAutobindings, applyProjections, collectRootSignals } from './compiler.js';
+import { analyzeTemplate, applyAutobindings, applyProjections, collectEachPaths, collectRootSignals } from './compiler.js';
 import config from '../config/default.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -456,9 +456,26 @@ async function registerAllTemplatePartialsUncached(templatesDir, signature) {
                             // leaf changes patch cells via stickers.
                             const rootProjected = Boolean(fine && fine.size);
                             const dataPath = rootProjected ? '' : autoBlock.dataPath;
-                            const depends = rootProjected
+                            let depends = rootProjected
                                 ? [...fine].join(', ')
                                 : autoBlock.depends;
+
+                            // Container partial: the each body is a nested
+                            // partial call, so there is no fine coverage and
+                            // autoBlock.depends is usually empty. The root
+                            // {{#each}} collections are the only thing this
+                            // block can subscribe to — without them a push
+                            // into the list would never re-render anything.
+                            if (!rootProjected) {
+                                const eachPaths = collectEachPaths(content)
+                                    .filter((p) => !String(depends || '')
+                                        .split(',')
+                                        .map((s) => s.trim())
+                                        .includes(p));
+                                if (eachPaths.length) {
+                                    depends = [depends, ...eachPaths].filter(Boolean).join(', ');
+                                }
+                            }
 
                             // Predictable error: a root-projected partial called
                             // with a context param (`{{> list products}}`) shifts
