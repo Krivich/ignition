@@ -466,6 +466,17 @@ rescope pass re-derives each row's index and rebinds drifted stickers, so
 addresses stay valid. Stickers whose collection is not yet in state (a
 controller computes it after boot) bind lazily and never blank SSR text.
 
+When a list does not qualify, the build prints a warning naming the template,
+the collection and the exact reason:
+
+```
+warn: ⚠️ catalog/page: list "items" re-renders its block on every cell change
+  — conditional ({{#if}}/{{#unless}}) inside the row body. Keep the row body
+  to simple fields ({{field}}) for fine-grained point updates.
+```
+
+A `{{!-- ignition: nobind --}}` opt-out silences these warnings.
+
 ## 14. Auto-Binding Internals
 
 The build scans the compiled Handlebars output and injects `data-ignition-binding` attributes for known patterns:

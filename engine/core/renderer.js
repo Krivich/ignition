@@ -188,13 +188,15 @@ registerHelpers();
  */
 const templateContextCache = new Map();
 
-function getTemplateContext(templateContent) {
+function getTemplateContext(templateContent, templateName = 'template') {
   let cached = templateContextCache.get(templateContent);
   if (cached) return cached;
   const analysis = analyzeTemplate(templateContent);
   const paginationConfig = detectPaginationInTemplate(templateContent);
   const transformed = applyAutobindings(templateContent);
-  const projected = applyProjections(transformed);
+  const projected = applyProjections(transformed, {
+    onDiag: (items) => warnLostFineGrained(templateName, items),
+  });
   cached = {
     analysis,
     paginationConfig,
@@ -208,13 +210,25 @@ function getTemplateContext(templateContent) {
 
 export function _clearTemplateCache() { templateContextCache.clear(); }
 
+// Build-time diagnostics: a list that lost fine-grained updates degrades to a
+// full block re-render on every cell change - tell the author why, once per
+// template (the projection is cached, so this fires on first compile).
+function warnLostFineGrained(templateName, items) {
+  for (const { collection, reasons } of items) {
+    logger.warn(
+      `⚠️ ${templateName}: list "${collection}" re-renders its block on every cell change — ${reasons.join('; ')}. ` +
+      `Keep the row body to simple fields ({{field}}) for fine-grained point updates.`
+    );
+  }
+}
+
 export async function renderTemplate(templatePath, data, outputDir, dataset, layout) {
     try {
         // 1. Read template
         const templateContent = await fs.readFile(templatePath, 'utf8');
 
         // 2-6. Analyze, transform and compile — cached by template content
-        const ctx = getTemplateContext(templateContent);
+        const ctx = getTemplateContext(templateContent, path.basename(templatePath, '.hbs'));
         const { analysis, paginationConfig, compile: template } = ctx;
 
         // 4. Read and register ALL partials from templates (also collect raw
@@ -379,9 +393,17 @@ async function registerAllTemplatePartials(templatesDir, analysis = null) {
     const signature = await templatesSignature(templatesDir);
     // Fast path: templates unchanged → reuse cached sources + already-registered
     // partials, avoiding the full read/transform/register pass on every render.
+    // The promise itself is cached so concurrent render tasks (queue
+    // concurrency > 1) share one registration pass instead of duplicating it
+    // (and duplicating its build-time warnings).
     const cached = partialCache.get(signature);
     if (cached) return cached;
+    const inFlight = registerAllTemplatePartialsUncached(templatesDir, signature);
+    partialCache.set(signature, inFlight);
+    return inFlight;
+}
 
+async function registerAllTemplatePartialsUncached(templatesDir, signature) {
     const sources = {};
     try {
         const autoBlocks = await detectAutoBlocks(templatesDir, signature);
@@ -404,6 +426,7 @@ async function registerAllTemplatePartials(templatesDir, analysis = null) {
                         const transformedContent = applyProjections(applyAutobindings(content), {
                             scopedOnly: true,
                             onFine: (s) => { fine = s; },
+                            onDiag: (items) => warnLostFineGrained(fullName, items),
                         });
 
                         // Deterministic auto-block decision (global, not per-task)
@@ -444,7 +467,6 @@ async function registerAllTemplatePartials(templatesDir, analysis = null) {
             logger.error('❌ Failed to register template partials', { error: err.message });
         }
     }
-    partialCache.set(signature, sources);
     return sources;
 }
 

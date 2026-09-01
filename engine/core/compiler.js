@@ -201,7 +201,7 @@ export function applyAutobindings(templateSource) {
  * @param {string} templateSource
  * @returns {string}
  */
-export function applyProjections(templateSource, { scopedOnly = false, onFine = null } = {}) {
+export function applyProjections(templateSource, { scopedOnly = false, onFine = null, onDiag = null } = {}) {
   // Find context-shifting block regions ({{#each/with/block}} ... {{/...}})
   // with a stack matcher so nested blocks pair correctly.
   const tagRe = /\{\{#(?:each|with|block)\b|\{\{\/(?:each|with|block)\}\}/g;
@@ -235,6 +235,8 @@ export function applyProjections(templateSource, { scopedOnly = false, onFine = 
   // the row element, @p stickers on its simple leaf fields). Everything else
   // (nested each, multi-node bodies, {{else}}, helper params, with/block)
   // stays masked and keeps degrading to the host block's re-render.
+  const hasNobindSrc = hasNobind(templateSource);
+  const diagnostics = [];
   const plan = kept.map(([start, end]) => {
     const region = templateSource.slice(start, end);
     const openM = /^\{\{#each\s+([a-zA-Z0-9_.]+)\s*\}\}/.exec(region);
@@ -249,8 +251,11 @@ export function applyProjections(templateSource, { scopedOnly = false, onFine = 
     const closeIdx = region.lastIndexOf('{{/');
     if (closeIdx < 0) return { start, end, mode: 'mask' };
     const body = templateSource.slice(bodyStart, start + closeIdx);
-    if (!isProjectableEachBody(body)) return { start, end, mode: 'mask' };
-    return { start, end, mode: 'project', collection, bodyStart, closeTagStart: start + closeIdx };
+    if (!isProjectableEachBody(body)) {
+      if (!hasNobindSrc) diagnostics.push({ collection, reasons: diagnoseEachBody(body, false) });
+      return { start, end, mode: 'mask' };
+    }
+    return { start, end, mode: 'project', collection, bodyStart, closeTagStart: start + closeIdx, body };
   });
 
   // Mask ALL regions so the global pass only sees top-level expressions.
@@ -290,14 +295,18 @@ export function applyProjections(templateSource, { scopedOnly = false, onFine = 
     let restored;
     if (r.mode === 'project') {
       const closeTag = templateSource.slice(r.closeTagStart, r.end);
-      const body = templateSource.slice(r.bodyStart, r.closeTagStart);
+      const body = r.body;
       // The row element is the body's FIRST tag - stamp the marker there.
       const stamped = body.replace(
         /^(\s*<[a-zA-Z][a-zA-Z0-9-]*[^>]*?)(\/?>)/,
         (m, head, tail) => `${head} data-ignition-row="${r.collection}"${tail}`
       );
       const projectedBody = projectEachBody(r.collection, stamped);
-      if (projectedBody.covered) fineCollections.add(r.collection);
+      if (projectedBody.covered) {
+        fineCollections.add(r.collection);
+      } else if (!hasNobindSrc) {
+        diagnostics.push({ collection: r.collection, reasons: diagnoseEachBody(body, true) });
+      }
       restored = templateSource.slice(r.start, r.bodyStart) + projectedBody.text + closeTag;
     } else {
       restored = templateSource.slice(r.start, r.end);
@@ -305,7 +314,27 @@ export function applyProjections(templateSource, { scopedOnly = false, onFine = 
     out = out.replace(`\u0000IGN${p}\u0000`, restored);
   }
   if (onFine) onFine(fineCollections);
+  if (onDiag && diagnostics.length > 0) onDiag(diagnostics);
   return out;
+}
+
+// Human-readable reasons why a list lost fine-grained updates. Specific
+// causes first; the generic coverage message only when nothing specific
+// applies (the body is structurally fine but expressions are not stickers).
+function diagnoseEachBody(body, projected) {
+  const reasons = [];
+  if (/\{\{#(?:if|unless)\b/.test(body)) reasons.push('conditional ({{#if}}/{{#unless}}) inside the row body');
+  if (/\{\{#each\b/.test(body)) reasons.push('nested {{#each}}');
+  if (/\{\{else\b/.test(body)) reasons.push('{{else}} branch');
+  const exprs = body.match(/\{\{[^}]*\}\}/g) || [];
+  if (exprs.some((e) => /^\{\{\s*(this|\.)\s*\}\}$/.test(e))) reasons.push('{{this}}');
+  if (exprs.some((e) => e.includes('../') || e.includes('@'))) reasons.push('parent/@-paths ({{../x}}, {{@index}})');
+  if (exprs.some((e) => /[\s()]/.test(e.slice(2, -2).trim()))) reasons.push('helper calls');
+  if (!projected && !singleTopLevelTag(body)) reasons.push('several top-level elements per row');
+  if (reasons.length === 0 && projected) {
+    reasons.push('expressions that cannot become stickers (multi-expression nodes)');
+  }
+  return reasons;
 }
 
 function isProjectableEachBody(body) {

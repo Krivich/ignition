@@ -352,6 +352,64 @@ describe('E5/E6: автопроекции (data-ignition-text из {{expr}} в �
     expect(fine.has('items')).toBe(false);
   });
 
+  describe('onDiag: предупреждения о списках, потерявших fine-grained', () => {
+    function diags(tpl) {
+      const out = [];
+      applyProjections(tpl, { scopedOnly: true, onDiag: (items) => out.push(...items) });
+      return out;
+    }
+
+    it('чистое тело — ни одного предупреждения', () => {
+      expect(diags(`{{#each items}}<div><span>{{name}}</span></div>{{/each}}`)).toEqual([]);
+    });
+
+    it('{{#if}} в теле — предупреждение с причиной', () => {
+      const d = diags(`{{#each items}}<div>{{#if flag}}<span>{{name}}</span>{{/if}}</div>{{/each}}`);
+      expect(d.length).toBe(1);
+      expect(d[0].collection).toBe('items');
+      expect(d[0].reasons.some((r) => /if/i.test(r))).toBe(true);
+    });
+
+    it('мульти-выражение — предупреждение', () => {
+      const d = diags(`{{#each items}}<div><span>{{a}} {{b}}</span></div>{{/each}}`);
+      expect(d.length).toBe(1);
+      expect(d[0].reasons.some((r) => /multi|expression/i.test(r))).toBe(true);
+    });
+
+    it('вложенный each — предупреждение', () => {
+      const d = diags(`{{#each a}}<div>{{#each b}}<span>{{x}}</span>{{/each}}</div>{{/each}}`);
+      expect(d.length).toBe(1);
+      expect(d[0].collection).toBe('a');
+      expect(d[0].reasons.some((r) => /each/i.test(r))).toBe(true);
+    });
+
+    it('несколько top-level узлов — предупреждение', () => {
+      const d = diags(`{{#each items}}<li>{{a}}</li><li>{{b}}</li>{{/each}}`);
+      expect(d.length).toBe(1);
+      expect(d[0].reasons.some((r) => /top-level|element/i.test(r))).toBe(true);
+    });
+
+    it('хелпер и {{this}} — предупреждение', () => {
+      const dHelper = diags(`{{#each items}}<div><span>{{upper name}}</span></div>{{/each}}`);
+      const dThis = diags(`{{#each items}}<div><span>{{this}}</span></div>{{/each}}`);
+      expect(dHelper.length).toBe(1);
+      expect(dThis.length).toBe(1);
+    });
+
+    it('{{else}} — предупреждение', () => {
+      const d = diags(`{{#each items}}<li>{{a}}</li>{{else}}<li>empty</li>{{/each}}`);
+      expect(d.length).toBe(1);
+    });
+
+    it('контекстный {{#each this}} — не предупреждение (штатный паттерн срезов)', () => {
+      expect(diags(`{{#each this}}<div><span>{{name}}</span></div>{{/each}}`)).toEqual([]);
+    });
+
+    it('top-level выражения вне each — не предупреждение', () => {
+      expect(diags(`<p>{{status}}</p><span data-ignition-text="x">{{x}}</span>`)).toEqual([]);
+    });
+  });
+
   it('SSR: обёртка блока штампует data-ignition-fine для покрытых путей', async () => {
     const originalConfig = {
       source: { ...config.source },
