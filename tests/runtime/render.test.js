@@ -64,6 +64,51 @@ describe('ignition.render — клиентский рендеринг шабло
     });
   });
 
+  describe('hydrate — keyed reconciliation (data-ignition-key)', () => {
+    let ul;
+    const mk = (rows) => rows.map(r => `<li data-ignition-key="${r.id}">${r.name}</li>`).join('');
+
+    beforeEach(() => {
+      ul = document.createElement('ul');
+      document.body.appendChild(ul);
+    });
+
+    it('сохраняет identity строки при переупорядочивании', () => {
+      hydrate(ul, mk([{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }, { id: 'c', name: 'C' }]));
+      const a = ul.children[0], b = ul.children[1], c = ul.children[2];
+      hydrate(ul, mk([{ id: 'b', name: 'B' }, { id: 'a', name: 'A' }, { id: 'c', name: 'C' }]));
+      expect(ul.children[0]).toBe(b);
+      expect(ul.children[1]).toBe(a);
+      expect(ul.children[2]).toBe(c);
+      expect([...ul.children].map(x => x.getAttribute('data-ignition-key'))).toEqual(['b', 'a', 'c']);
+    });
+
+    it('вставляем строку в середине — существующие reuse, новые добавляются', () => {
+      hydrate(ul, mk([{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }, { id: 'c', name: 'C' }]));
+      const a = ul.children[0], b = ul.children[1];
+      hydrate(ul, mk([{ id: 'a', name: 'A' }, { id: 'x', name: 'X' }, { id: 'b', name: 'B' }, { id: 'c', name: 'C' }]));
+      expect(ul.children[0]).toBe(a);
+      expect(ul.children[2]).toBe(b);
+      expect([...ul.children].map(x => x.getAttribute('data-ignition-key'))).toEqual(['a', 'x', 'b', 'c']);
+    });
+
+    it('удаляет строку и обновляет текст оставшихся', () => {
+      hydrate(ul, mk([{ id: 'a', name: 'A' }, { id: 'x', name: 'X' }, { id: 'b', name: 'B' }, { id: 'c', name: 'C' }]));
+      const x = ul.children[1];
+      hydrate(ul, mk([{ id: 'a', name: 'A' }, { id: 'x', name: 'X EDITED' }, { id: 'b', name: 'B' }]));
+      expect([...ul.children].map(n => n.getAttribute('data-ignition-key'))).toEqual(['a', 'x', 'b']);
+      expect(ul.children[1]).toBe(x);
+      expect(ul.children[1].textContent).toBe('X EDITED');
+    });
+
+    it('без data-ignition-key работает как обычный order-preserving reconcile', () => {
+      hydrate(ul, '<li>1</li><li>2</li><li>3</li>');
+      hydrate(ul, '<li>1</li><li>2 EDITED</li><li>3</li><li>4</li>');
+      expect(ul.children).toHaveLength(4);
+      expect(ul.children[1].textContent).toBe('2 EDITED');
+    });
+  });
+
   describe('fetchJson — загрузка данных', () => {
     it('загружает JSON по URL', async () => {
       const mockData = { items: [1, 2, 3] };

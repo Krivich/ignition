@@ -1,5 +1,21 @@
+// Minimal prefix trie over listener paths. Each node holds the callbacks
+// subscribed to its exact path. A mutation walks only the affected branch:
+//  - firing the ancestors/self on the way down (a change in `a.b` notifies a
+//    listener on `a` and on `a`), and
+//  - then DFS-ing the changed node's subtree (replacing `a` notifies listeners
+//    on `a.x`, `a.y`, ...).
+// This replaces a full linear scan over every listener on each mutation.
+function createTrieNode() {
+  return { children: new Map(), callbacks: new Set() };
+}
+
+function pathSegments(path) {
+  if (path === '*') return [];
+  return String(path).split('.');
+}
+
 export function createReactiveState(initialData) {
-  const listeners = new Map();
+  const rootTrie = createTrieNode();
   const proxyCache = new WeakMap();
   const proxyToRaw = new WeakMap();
   let notifyDepth = 0;
@@ -8,13 +24,31 @@ export function createReactiveState(initialData) {
   const ephemeralTimers = new Map();
   let suppressingEphemeralCancel = false;
 
+  function fireCallbacks(node, fullPath, oldVal, newVal) {
+    for (const cb of node.callbacks) {
+      cb(fullPath, oldVal, newVal);
+    }
+  }
+
+  // Walk the affected branch: fire ancestors + self (root handles '*').
   function doNotify(fullPath, oldVal, newVal) {
-    for (const [pattern, callbacks] of listeners) {
-      if (pattern === '*' || fullPath === pattern || fullPath.startsWith(pattern + '.') || pattern.startsWith(fullPath + '.')) {
-        for (const cb of callbacks) {
-          cb(fullPath, oldVal, newVal);
-        }
-      }
+    fireCallbacks(rootTrie, fullPath, oldVal, newVal);
+    let node = rootTrie;
+    const segs = pathSegments(fullPath);
+    for (let i = 0; i < segs.length; i++) {
+      node = node.children.get(segs[i]);
+      if (!node) break;
+      fireCallbacks(node, fullPath, oldVal, newVal);
+    }
+    // Descendants: if the mutated node exists, fire every callback in its
+    // subtree (a parent/whole-slice replacement notifies child listeners).
+    if (node) notifySubtree(node, fullPath, oldVal, newVal);
+  }
+
+  function notifySubtree(node, fullPath, oldVal, newVal) {
+    for (const child of node.children.values()) {
+      fireCallbacks(child, fullPath, oldVal, newVal);
+      notifySubtree(child, fullPath, oldVal, newVal);
     }
   }
 
@@ -92,15 +126,29 @@ export function createReactiveState(initialData) {
   const state = wrap(initialData, '');
 
   state.subscribe = function (path, callback) {
-    if (!listeners.has(path)) {
-      listeners.set(path, new Set());
+    const segs = pathSegments(path);
+    let node = rootTrie;
+    for (const seg of segs) {
+      let child = node.children.get(seg);
+      if (!child) {
+        child = createTrieNode();
+        node.children.set(seg, child);
+      }
+      node = child;
     }
-    listeners.get(path).add(callback);
+    node.callbacks.add(callback);
     return () => {
-      const cbs = listeners.get(path);
-      if (cbs) {
-        cbs.delete(callback);
-        if (cbs.size === 0) listeners.delete(path);
+      node.callbacks.delete(callback);
+      // Drop empty branches to keep the trie lean.
+      if (node.callbacks.size === 0) {
+        let parent = rootTrie;
+        for (let i = 0; i < segs.length; i++) {
+          const child = parent.children.get(segs[i]);
+          if (child && child.callbacks.size === 0 && child.children.size === 0) {
+            parent.children.delete(segs[i]);
+          }
+          parent = child || parent;
+        }
       }
     };
   };

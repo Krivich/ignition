@@ -45,6 +45,36 @@ export function initBinding(state, element) {
   initAutoBinding(state, element);
 }
 
+// Single DOM pass finding every element that carries a binding marker, instead
+// of the previous two queries (a targeted selector + a full '*'-wide scan for
+// the data-ignition-attr-* prefix). The common exact markers are matched by a
+// cheap selector; the attr-prefixed ones (which have no fixed name) are caught
+// in one descendant walk.
+export function findBoundElements(root) {
+  const found = [];
+  const seen = new Set();
+  const exact = root.querySelectorAll(
+    '[data-ignition-binding], [data-ignition-class], [data-ignition-text]'
+  );
+  for (let i = 0; i < exact.length; i++) {
+    const el = exact[i];
+    found.push(el);
+    seen.add(el);
+  }
+  const all = root.querySelectorAll('*');
+  for (let i = 0; i < all.length; i++) {
+    const el = all[i];
+    if (seen.has(el)) continue;
+    const attrs = el.attributes;
+    let hasAttr = false;
+    for (let j = 0; j < attrs.length; j++) {
+      if (attrs[j].name.indexOf('data-ignition-attr-') === 0) { hasAttr = true; break; }
+    }
+    if (hasAttr) found.push(el);
+  }
+  return found;
+}
+
 function initFormBinding(state, element) {
   const path = element.getAttribute('data-ignition-binding');
   if (!path) return;
@@ -236,17 +266,11 @@ export function initBlocks(state, options = {}) {
 
     const isServerFilled = block.innerHTML.trim() !== '';
 
-    function hasAttrBinding(el) {
-      return Array.from(el.attributes).some(a => a.name.startsWith('data-ignition-attr-'));
-    }
-
     function processBlockContent(root) {
-      root.querySelectorAll('[data-ignition-binding], [data-ignition-class], [data-ignition-text]').forEach(el => {
-        initBinding(state, el);
-      });
-      root.querySelectorAll('*').forEach(el => {
-        if (hasAttrBinding(el)) initBinding(state, el);
-      });
+      const bound = findBoundElements(root);
+      for (let i = 0; i < bound.length; i++) {
+        initBinding(state, bound[i]);
+      }
     }
 
     function render() {

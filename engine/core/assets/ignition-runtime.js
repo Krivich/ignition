@@ -216,8 +216,24 @@ function registerBlockHelper(Handlebars, env) {
 }
 
   // ========== state.js ==========
-  function createReactiveState(initialData) {
-  const listeners = new Map();
+  // Minimal prefix trie over listener paths. Each node holds the callbacks
+// subscribed to its exact path. A mutation walks only the affected branch:
+//  - firing the ancestors/self on the way down (a change in `a.b` notifies a
+//    listener on `a` and on `a`), and
+//  - then DFS-ing the changed node's subtree (replacing `a` notifies listeners
+//    on `a.x`, `a.y`, ...).
+// This replaces a full linear scan over every listener on each mutation.
+function createTrieNode() {
+  return { children: new Map(), callbacks: new Set() };
+}
+
+function pathSegments(path) {
+  if (path === '*') return [];
+  return String(path).split('.');
+}
+
+function createReactiveState(initialData) {
+  const rootTrie = createTrieNode();
   const proxyCache = new WeakMap();
   const proxyToRaw = new WeakMap();
   let notifyDepth = 0;
@@ -226,13 +242,31 @@ function registerBlockHelper(Handlebars, env) {
   const ephemeralTimers = new Map();
   let suppressingEphemeralCancel = false;
 
+  function fireCallbacks(node, fullPath, oldVal, newVal) {
+    for (const cb of node.callbacks) {
+      cb(fullPath, oldVal, newVal);
+    }
+  }
+
+  // Walk the affected branch: fire ancestors + self (root handles '*').
   function doNotify(fullPath, oldVal, newVal) {
-    for (const [pattern, callbacks] of listeners) {
-      if (pattern === '*' || fullPath === pattern || fullPath.startsWith(pattern + '.') || pattern.startsWith(fullPath + '.')) {
-        for (const cb of callbacks) {
-          cb(fullPath, oldVal, newVal);
-        }
-      }
+    fireCallbacks(rootTrie, fullPath, oldVal, newVal);
+    let node = rootTrie;
+    const segs = pathSegments(fullPath);
+    for (let i = 0; i < segs.length; i++) {
+      node = node.children.get(segs[i]);
+      if (!node) break;
+      fireCallbacks(node, fullPath, oldVal, newVal);
+    }
+    // Descendants: if the mutated node exists, fire every callback in its
+    // subtree (a parent/whole-slice replacement notifies child listeners).
+    if (node) notifySubtree(node, fullPath, oldVal, newVal);
+  }
+
+  function notifySubtree(node, fullPath, oldVal, newVal) {
+    for (const child of node.children.values()) {
+      fireCallbacks(child, fullPath, oldVal, newVal);
+      notifySubtree(child, fullPath, oldVal, newVal);
     }
   }
 
@@ -310,15 +344,29 @@ function registerBlockHelper(Handlebars, env) {
   const state = wrap(initialData, '');
 
   state.subscribe = function (path, callback) {
-    if (!listeners.has(path)) {
-      listeners.set(path, new Set());
+    const segs = pathSegments(path);
+    let node = rootTrie;
+    for (const seg of segs) {
+      let child = node.children.get(seg);
+      if (!child) {
+        child = createTrieNode();
+        node.children.set(seg, child);
+      }
+      node = child;
     }
-    listeners.get(path).add(callback);
+    node.callbacks.add(callback);
     return () => {
-      const cbs = listeners.get(path);
-      if (cbs) {
-        cbs.delete(callback);
-        if (cbs.size === 0) listeners.delete(path);
+      node.callbacks.delete(callback);
+      // Drop empty branches to keep the trie lean.
+      if (node.callbacks.size === 0) {
+        let parent = rootTrie;
+        for (let i = 0; i < segs.length; i++) {
+          const child = parent.children.get(segs[i]);
+          if (child && child.callbacks.size === 0 && child.children.size === 0) {
+            parent.children.delete(segs[i]);
+          }
+          parent = child || parent;
+        }
       }
     };
   };
@@ -393,7 +441,140 @@ function renderTemplate(name, data) {
 function hydrate(element, html) {
   const temp = document.createElement('div');
   temp.innerHTML = html;
-  element.replaceChildren(...temp.childNodes);
+  // Order-preserving reconcile: reuse existing element/text nodes whose
+  // structure is unchanged (typical in-place list/cell edits), so we avoid
+  // tearing down + rebuilding rows (and re-binding them) on every re-render.
+  // Any structural or attribute divergence falls back to swapping in the
+  // freshly parsed node, keeping the resulting DOM identical to the naive
+  // replaceChildren swap. Node-identity (and with it focus, input state and
+  // existing bindings) is preserved for stable rows.
+  reconcileChildren(element, Array.from(element.childNodes), Array.from(temp.childNodes));
+}
+
+// Reuse a node only when attributes match exactly (name+value+order), so an
+// in-place patch serializes identically to a fresh re-parse of the new markup.
+function attributesCompatible(a, b) {
+  const aa = a.attributes;
+  const ba = b.attributes;
+  if (aa.length !== ba.length) return false;
+  for (let i = 0; i < aa.length; i++) {
+    if (aa[i].name !== ba[i].name || aa[i].value !== ba[i].value) return false;
+  }
+  return true;
+}
+
+function isKeyed(node) {
+  return node.nodeType === 1 && node.hasAttribute('data-ignition-key');
+}
+
+function reconcileChildren(parent, oldChildren, newChildren) {
+  // Keyed mode: when the new children carry data-ignition-key rows, match old
+  // rows by key so insert/delete/reorder reuse the same DOM nodes (preserving
+  // node identity — and with it focus, scroll and bindings). This is the same
+  // stable row identity mechanism fine-grained reactivity will build on.
+  for (let i = 0; i < newChildren.length; i++) {
+    if (isKeyed(newChildren[i])) {
+      reconcileKeyed(parent, oldChildren, newChildren);
+      return;
+    }
+  }
+  reconcileOrdered(parent, oldChildren, newChildren);
+}
+
+function reconcileKeyed(parent, oldChildren, newChildren) {
+  const byKey = new Map();
+  for (const oldN of oldChildren) {
+    if (isKeyed(oldN)) byKey.set(oldN.getAttribute('data-ignition-key'), oldN);
+  }
+  const used = new Set();
+  for (let i = 0; i < newChildren.length; i++) {
+    const newN = newChildren[i];
+    const k = isKeyed(newN) ? newN.getAttribute('data-ignition-key') : null;
+    if (k !== null) {
+      const oldN = byKey.get(k);
+      if (oldN && !used.has(oldN)) {
+        used.add(oldN);
+        parent.appendChild(oldN); // move to correct position (reorder)
+        syncKeyedNode(oldN, newN);
+        continue;
+      }
+    }
+    // unkeyed new node or no reusable match → insert the fresh node
+    parent.appendChild(newN);
+  }
+  // drop every old child that was not reused (deleted rows + unkeyed stragglers)
+  for (const oldN of oldChildren) {
+    if (!used.has(oldN) && oldN.parentNode === parent) parent.removeChild(oldN);
+  }
+}
+
+// Reuse an element whose identity we want to keep (focus/scroll/bindings) by
+// making it match the freshly parsed node exactly: attributes copied in the new
+// node's order + children reconciled, so serialization stays identical too.
+function syncKeyedNode(oldN, newN) {
+  const oldAttrs = Array.from(oldN.attributes);
+  for (let i = 0; i < oldAttrs.length; i++) oldN.removeAttribute(oldAttrs[i].name);
+  const newAttrs = Array.from(newN.attributes);
+  for (let i = 0; i < newAttrs.length; i++) oldN.setAttribute(newAttrs[i].name, newAttrs[i].value);
+  reconcileChildren(oldN, Array.from(oldN.childNodes), Array.from(newN.childNodes));
+}
+
+// Structural equivalence WITHOUT serialization: jsdom's outerHTML getter is
+// disproportionately expensive (fresh serializer + full subtree walk per
+// call), so identity is decided by attribute/child-structure recursion on the
+// cheap accessors instead.
+function nodesEquivalent(a, b) {
+  if (a.nodeType !== b.nodeType || a.nodeName !== b.nodeName) return false;
+  if (a.nodeType === 3) return a.nodeValue === b.nodeValue;
+  if (!attributesCompatible(a, b)) return false;
+  const ac = a.childNodes;
+  const bc = b.childNodes;
+  if (ac.length !== bc.length) return false;
+  for (let i = 0; i < ac.length; i++) {
+    if (!nodesEquivalent(ac[i], bc[i])) return false;
+  }
+  return true;
+}
+
+function reconcileOrdered(parent, oldChildren, newChildren) {
+  const min = Math.min(oldChildren.length, newChildren.length);
+  let prefix = 0;
+  while (prefix < min && nodesEquivalent(oldChildren[prefix], newChildren[prefix])) prefix++;
+  if (prefix === oldChildren.length && prefix === newChildren.length) return;
+  if (prefix === oldChildren.length) {
+    parent.append(...newChildren.slice(prefix));
+    return;
+  }
+  if (prefix === newChildren.length) {
+    parent.replaceChildren(...newChildren);
+    return;
+  }
+  const max = Math.max(oldChildren.length, newChildren.length);
+  for (let i = 0; i < max; i++) {
+    const oldN = oldChildren[i];
+    const newN = newChildren[i];
+    if (oldN && !newN) {
+      parent.removeChild(oldN);
+      continue;
+    }
+    if (!oldN && newN) {
+      parent.appendChild(newN);
+      continue;
+    }
+    if (oldN.nodeType !== newN.nodeType || oldN.nodeName !== newN.nodeName) {
+      parent.replaceChild(newN, oldN);
+      continue;
+    }
+    if (oldN.nodeType === 3) {
+      if (oldN.nodeValue !== newN.nodeValue) oldN.nodeValue = newN.nodeValue;
+    } else if (nodesEquivalent(oldN, newN)) {
+      // identical subtree → leave untouched (keeps bindings + focus).
+    } else if (attributesCompatible(oldN, newN)) {
+      reconcileChildren(oldN, Array.from(oldN.childNodes), Array.from(newN.childNodes));
+    } else {
+      parent.replaceChild(newN, oldN);
+    }
+  }
 }
 
 const pendingFetches = new Map();
@@ -464,6 +645,36 @@ function initBinding(state, element) {
   initAttrBinding(state, element);
   initTextBinding(state, element);
   initAutoBinding(state, element);
+}
+
+// Single DOM pass finding every element that carries a binding marker, instead
+// of the previous two queries (a targeted selector + a full '*'-wide scan for
+// the data-ignition-attr-* prefix). The common exact markers are matched by a
+// cheap selector; the attr-prefixed ones (which have no fixed name) are caught
+// in one descendant walk.
+function findBoundElements(root) {
+  const found = [];
+  const seen = new Set();
+  const exact = root.querySelectorAll(
+    '[data-ignition-binding], [data-ignition-class], [data-ignition-text]'
+  );
+  for (let i = 0; i < exact.length; i++) {
+    const el = exact[i];
+    found.push(el);
+    seen.add(el);
+  }
+  const all = root.querySelectorAll('*');
+  for (let i = 0; i < all.length; i++) {
+    const el = all[i];
+    if (seen.has(el)) continue;
+    const attrs = el.attributes;
+    let hasAttr = false;
+    for (let j = 0; j < attrs.length; j++) {
+      if (attrs[j].name.indexOf('data-ignition-attr-') === 0) { hasAttr = true; break; }
+    }
+    if (hasAttr) found.push(el);
+  }
+  return found;
 }
 
 function initFormBinding(state, element) {
@@ -657,17 +868,11 @@ function initBlocks(state, options = {}) {
 
     const isServerFilled = block.innerHTML.trim() !== '';
 
-    function hasAttrBinding(el) {
-      return Array.from(el.attributes).some(a => a.name.startsWith('data-ignition-attr-'));
-    }
-
     function processBlockContent(root) {
-      root.querySelectorAll('[data-ignition-binding], [data-ignition-class], [data-ignition-text]').forEach(el => {
-        initBinding(state, el);
-      });
-      root.querySelectorAll('*').forEach(el => {
-        if (hasAttrBinding(el)) initBinding(state, el);
-      });
+      const bound = findBoundElements(root);
+      for (let i = 0; i < bound.length; i++) {
+        initBinding(state, bound[i]);
+      }
     }
 
     function render() {
@@ -798,13 +1003,32 @@ function createComputed(state, name, fn) {
   return path.split('.').reduce((cur, key) => (cur == null ? undefined : cur[key]), data);
 }
 
+// Semantic deep-equality. Unlike JSON.stringify comparison this short-circuits
+// on the first difference (so unchanged rows cost O(1) lookups at the top) and
+// is insensitive to object key order — substantially cheaper on large slices.
 function equal(a, b) {
   if (a === b) return true;
-  if (a === null || b === null || a === undefined || b === undefined) return a === b;
+  if (a === null || b === null || a === undefined || b === undefined) return false;
   if (typeof a !== 'object' || typeof b !== 'object') return false;
-  const aJson = JSON.stringify(a);
-  const bJson = JSON.stringify(b);
-  return aJson === bJson;
+  const aIsArray = Array.isArray(a);
+  const bIsArray = Array.isArray(b);
+  if (aIsArray !== bIsArray) return false;
+  if (aIsArray) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!equal(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  for (let i = 0; i < aKeys.length; i++) {
+    const key = aKeys[i];
+    if (!Object.prototype.hasOwnProperty.call(b, key)) return false;
+    if (!equal(a[key], b[key])) return false;
+  }
+  return true;
 }
 
 /**
@@ -928,15 +1152,10 @@ async function loadDataset(state, url) {
 
   function processAllBindings(state, root) {
     var scope = root || document;
-    scope.querySelectorAll('[data-ignition-binding], [data-ignition-class], [data-ignition-text]').forEach(function (el) {
-      initBinding(state, el);
-    });
-    scope.querySelectorAll('*').forEach(function (el) {
-      var hasAttr = Array.prototype.some.call(el.attributes, function (a) {
-        return a.name.indexOf('data-ignition-attr-') === 0;
-      });
-      if (hasAttr) initBinding(state, el);
-    });
+    var bound = findBoundElements(scope);
+    for (var i = 0; i < bound.length; i++) {
+      initBinding(state, bound[i]);
+    }
   }
 
   function boot() {

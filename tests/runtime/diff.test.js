@@ -76,6 +76,16 @@ describe('E. Personalized dataset: diff manifest and partial re-render', () => {
       const changed = diffSlices(manifest, blockPaths, newDataset);
       expect(changed.size).toBe(0);
     });
+
+    it('semantic equality: object key order does not trigger a false change', () => {
+      // JSON.stringify-based comparison would flag these as different;
+      // deep equality must treat them as the same slice.
+      const manifest = { 'ssr/u': { a: 1, b: 2, c: 3 } };
+      const blockPaths = { 'ssr/u': 'user' };
+      const newDataset = { user: { c: 3, b: 2, a: 1 } };
+      const changed = diffSlices(manifest, blockPaths, newDataset);
+      expect(changed.size).toBe(0);
+    });
   });
 
   describe('E: mergeSlices + only affected blocks re-render', () => {

@@ -85,15 +85,10 @@ function build() {
 
   function processAllBindings(state, root) {
     var scope = root || document;
-    scope.querySelectorAll('[data-ignition-binding], [data-ignition-class], [data-ignition-text]').forEach(function (el) {
-      initBinding(state, el);
-    });
-    scope.querySelectorAll('*').forEach(function (el) {
-      var hasAttr = Array.prototype.some.call(el.attributes, function (a) {
-        return a.name.indexOf('data-ignition-attr-') === 0;
-      });
-      if (hasAttr) initBinding(state, el);
-    });
+    var bound = findBoundElements(scope);
+    for (var i = 0; i < bound.length; i++) {
+      initBinding(state, bound[i]);
+    }
   }
 
   function boot() {

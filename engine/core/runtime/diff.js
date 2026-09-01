@@ -6,13 +6,32 @@ export function getSlice(data, path) {
   return path.split('.').reduce((cur, key) => (cur == null ? undefined : cur[key]), data);
 }
 
+// Semantic deep-equality. Unlike JSON.stringify comparison this short-circuits
+// on the first difference (so unchanged rows cost O(1) lookups at the top) and
+// is insensitive to object key order — substantially cheaper on large slices.
 function equal(a, b) {
   if (a === b) return true;
-  if (a === null || b === null || a === undefined || b === undefined) return a === b;
+  if (a === null || b === null || a === undefined || b === undefined) return false;
   if (typeof a !== 'object' || typeof b !== 'object') return false;
-  const aJson = JSON.stringify(a);
-  const bJson = JSON.stringify(b);
-  return aJson === bJson;
+  const aIsArray = Array.isArray(a);
+  const bIsArray = Array.isArray(b);
+  if (aIsArray !== bIsArray) return false;
+  if (aIsArray) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!equal(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  for (let i = 0; i < aKeys.length; i++) {
+    const key = aKeys[i];
+    if (!Object.prototype.hasOwnProperty.call(b, key)) return false;
+    if (!equal(a[key], b[key])) return false;
+  }
+  return true;
 }
 
 /**
