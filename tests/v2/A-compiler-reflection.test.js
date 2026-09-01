@@ -148,7 +148,8 @@ describe('A. Компиляторный рефлекшн', () => {
 
     expect(html).toContain('data-ignition-block="explicit/list"');
     expect(html).toContain('data-ignition-data="products, categories"');
-    expect(html).toContain('<span>X</span>');
+    // each проектируется: строка-элемент получает маркер + стикер @p
+    expect(html).toContain('<span data-ignition-row="products" data-ignition-text="@p:products.*.name">X</span>');
   });
 
   it('A4: noblock рендерит partial без рефлекшна', async () => {

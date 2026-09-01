@@ -608,6 +608,7 @@ const classBoundElements = new WeakSet();
 const attrBoundElements = new WeakSet();
 const textBoundElements = new WeakSet();
 const autoBoundElements = new WeakSet();
+const eachBoundElements = new WeakMap();
 
 
 
@@ -771,10 +772,15 @@ function initAttrBinding(state, element) {
 }
 
 function initTextBinding(state, element) {
-  const path = element.getAttribute('data-ignition-text');
-  if (!path) return;
+  const attr = element.getAttribute('data-ignition-text');
+  if (!attr) return;
   if (textBoundElements.has(element)) return;
+  if (attr.startsWith('@p:')) {
+    initEachTextBinding(state, element, attr);
+    return;
+  }
   textBoundElements.add(element);
+  const path = attr;
 
   const sync = () => {
     const val = getByPath(state, path);
@@ -844,6 +850,110 @@ function initAutoBinding(state, element) {
   }
 }
 
+// ---- row-scoped projections (fine-grained {{#each}}) ----
+
+// Sticker format produced by the compiler: `@p:<collection>.*.<leaf>` where
+// `.*.` marks the row position that gets resolved per row at bind time.
+function parseEachSticker(attr) {
+  const rest = attr.slice(3);
+  const idx = rest.indexOf('.*.');
+  if (idx < 0) return null;
+  const collection = rest.slice(0, idx);
+  const leaf = rest.slice(idx + 3);
+  if (!collection || !leaf) return null;
+  return { collection, leaf };
+}
+
+function rowIndexInParent(row, collection) {
+  let i = 0;
+  let n = row.previousElementSibling;
+  while (n) {
+    if (n.getAttribute('data-ignition-row') === collection) i++;
+    n = n.previousElementSibling;
+  }
+  return i;
+}
+
+function bindEachText(state, element, meta) {
+  const path = `${meta.collection}.${meta.index}.${meta.leaf}`;
+  const sync = () => {
+    element.textContent = getByPath(state, path) ?? '';
+  };
+  const unsub = state.subscribe(path, sync);
+  sync();
+  eachBoundElements.set(element, { ...meta, state, unsub });
+}
+
+function initEachTextBinding(state, element, attr) {
+  const spec = parseEachSticker(attr);
+  if (!spec) return;
+  textBoundElements.add(element);
+  const row = element.closest(`[data-ignition-row="${spec.collection}"]`);
+  if (!row) return;
+  const index = rowIndexInParent(row, spec.collection);
+  // The collection may not exist at the state root yet (a controller computes
+  // it after boot, or the partial is rendered against a shifted context, e.g.
+  // CSR pagination items). Wait for it instead of blanking the SSR text with
+  // an unresolved path; when it appears, bind at the row's CURRENT position.
+  if (getByPath(state, spec.collection) === undefined) {
+    const unsubWait = state.subscribe(spec.collection, () => {
+      if (getByPath(state, spec.collection) === undefined) return;
+      unsubWait();
+      const currentRow = element.closest(`[data-ignition-row="${spec.collection}"]`);
+      if (!currentRow) return;
+      bindEachText(state, element, {
+        collection: spec.collection,
+        leaf: spec.leaf,
+        index: rowIndexInParent(currentRow, spec.collection),
+      });
+    });
+    eachBoundElements.set(element, { collection: spec.collection, leaf: spec.leaf, state, unsub: unsubWait, index });
+    return;
+  }
+  bindEachText(state, element, { collection: spec.collection, leaf: spec.leaf, index });
+}
+
+// After a hydrate (reorder/insert/delete inside a list), reused rows keep
+// their DOM identity but their sticker subscriptions point at stale indices.
+// One ordered pass re-derives every row's index and rebinds drifted stickers
+// (dropping the old subscription), so row identity survives structural moves.
+function rescopeEachBindings(root) {
+  const rows = root.querySelectorAll('[data-ignition-row]');
+  if (!rows.length) return;
+  const positions = new Map();
+  const perParent = new Map();
+  for (const row of rows) {
+    const collection = row.getAttribute('data-ignition-row');
+    let byCollection = perParent.get(row.parentNode);
+    if (!byCollection) {
+      byCollection = new Map();
+      perParent.set(row.parentNode, byCollection);
+    }
+    const index = byCollection.get(collection) || 0;
+    positions.set(row, { collection, index });
+    byCollection.set(collection, index + 1);
+  }
+
+  const stickers = root.querySelectorAll('[data-ignition-text^="@p:"]');
+  for (const el of stickers) {
+    const meta = eachBoundElements.get(el);
+    if (!meta) continue;
+    // Still waiting for the collection to appear at the state root - the
+    // wait subscription will bind it; nothing to rescope yet.
+    if (getByPath(meta.state, meta.collection) === undefined) continue;
+    const row = el.closest(`[data-ignition-row="${meta.collection}"]`);
+    if (!row) {
+      meta.unsub();
+      eachBoundElements.delete(el);
+      continue;
+    }
+    const pos = positions.get(row);
+    if (!pos || pos.index === meta.index) continue;
+    meta.unsub();
+    bindEachText(meta.state, el, { collection: meta.collection, leaf: meta.leaf, index: pos.index });
+  }
+}
+
 function initBlocks(state, options = {}) {
   const { renderers = {}, sourceDeps = {}, afterHydrate } = options;
   const blocks = document.querySelectorAll('[data-ignition-block]');
@@ -873,6 +983,7 @@ function initBlocks(state, options = {}) {
       for (let i = 0; i < bound.length; i++) {
         initBinding(state, bound[i]);
       }
+      rescopeEachBindings(root);
     }
 
     function render() {

@@ -129,12 +129,58 @@ describe('E5/E6: автопроекции (data-ignition-text из {{expr}} в �
     expect(out).toContain('{{ui.count}}');
   });
 
-  it('не трогает relative-пути внутри #each/#with/#block', () => {
-    const tpl = `{{#each products}}<div>{{name}}</div>{{/each}}<p>{{status}}</p>`;
+  it('проектирует простые поля внутри top-level #each: маркер строки + стикер @p', () => {
+    const tpl = `{{#each products}}<div class="row"><span class="n">{{name}}</span><span class="p">{{price}}</span></div>{{/each}}<p>{{status}}</p>`;
     const out = applyProjections(tpl);
-    expect(out).toContain('<div>{{name}}</div>');
-    expect(out).not.toContain('data-ignition-text="name"');
+    expect(out).toContain('<div class="row" data-ignition-row="products">');
+    expect(out).toContain('<span class="n" data-ignition-text="@p:products.*.name">{{name}}</span>');
+    expect(out).toContain('<span class="p" data-ignition-text="@p:products.*.price">{{price}}</span>');
     expect(out).toContain('<p data-ignition-text="status">{{status}}</p>');
+  });
+
+  it('не проектирует ../, @-пути и {{this}} внутри #each', () => {
+    const tpl = `{{#each items}}<div><i>{{../title}}</i><b>{{@index}}</b><s>{{this}}</s></div>{{/each}}`;
+    const out = applyProjections(tpl);
+    expect(out).not.toContain('data-ignition-text');
+  });
+
+  it('маскирует вложенный #each (v1: деградация до ре-рендера блока)', () => {
+    const tpl = `{{#each a}}<div>{{#each b}}<span>{{x}}</span>{{/each}}</div>{{/each}}`;
+    const out = applyProjections(tpl);
+    expect(out).not.toContain('data-ignition-text');
+    expect(out).not.toContain('data-ignition-row');
+  });
+
+  it('маскирует #each с несколькими top-level узлами', () => {
+    const tpl = `{{#each items}}<li>{{a}}</li><li>{{b}}</li>{{/each}}`;
+    const out = applyProjections(tpl);
+    expect(out).not.toContain('data-ignition-row');
+    expect(out).not.toContain('data-ignition-text');
+  });
+
+  it('маскирует #each c {{else}}', () => {
+    const tpl = `{{#each items}}<li>{{a}}</li>{{else}}<li>пусто</li>{{/each}}`;
+    const out = applyProjections(tpl);
+    expect(out).not.toContain('data-ignition-row');
+  });
+
+  it('маскирует #each с не-простым параметром', () => {
+    const tpl = `{{#each (items x)}}<li>{{a}}</li>{{/each}}`;
+    const out = applyProjections(tpl);
+    expect(out).not.toContain('data-ignition-row');
+  });
+
+  it('#with и #block по-прежнему маскируются', () => {
+    const tpl = `{{#with user}}<span>{{name}}</span>{{/with}}{{#block name="x" depends="y"}}<span>{{z}}</span>{{/block}}`;
+    const out = applyProjections(tpl);
+    expect(out).not.toContain('data-ignition-text');
+  });
+
+  it('{{#if}} внутри #each не мешает проекции вложенных полей', () => {
+    const tpl = `{{#each items}}<div>{{#if flag}}<span>{{name}}</span>{{/if}}</div>{{/each}}`;
+    const out = applyProjections(tpl);
+    expect(out).toContain('<div data-ignition-row="items">');
+    expect(out).toContain('data-ignition-text="@p:items.*.name"');
   });
 
   it('не дублирует существующий data-ignition-text и не трогает title/textarea/script', () => {
@@ -260,6 +306,54 @@ describe('E5/E6: автопроекции (data-ignition-text из {{expr}} в �
       expect(document.querySelector('.counter').textContent).toBe('10');
       clientState.title = 'Мир';
       expect(document.querySelector('.title').textContent).toBe('Мир');
+    } finally {
+      config.source = originalConfig.source;
+      config.output = originalConfig.output;
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('партиал с #each получает проекции при регистрации (SSR)', async () => {
+    const originalConfig = {
+      source: { ...config.source },
+      output: { ...config.output },
+    };
+    const tmpDir = await fs.mkdtemp(path.join(projectRoot, 'tmp', 'ignition-v2-each-part-'));
+    try {
+      config.source.templates = path.join(tmpDir, 'input', 'templates');
+      config.source.data = path.join(tmpDir, 'input', 'data');
+      config.output.html = path.join(tmpDir, 'output', 'public');
+      config.output.data = path.join(tmpDir, 'output', 'public', 'data');
+      config.output.templates = path.join(tmpDir, 'output', 'public', 'templates');
+      config.output.assets = path.join(tmpDir, 'output', 'public', 'assets');
+
+      const templatesDir = config.source.templates;
+      // Стикеры @p резолвятся от КОРНЯ state, поэтому параметр each — путь
+      // от корня данных (партиал вызывается без сдвига контекста).
+      const layout = `<!DOCTYPE html>
+<html>
+<head><script>window.__IGNITION_INITIAL_DATA__ = {{{initialData}}};</script></head>
+<body>{{> epl/list}}</body></html>`;
+      const listPartial = `{{#each products}}<div class="row"><span class="n">{{name}}</span><span class="p">{{price}}</span></div>{{/each}}`;
+      await fs.mkdir(path.join(templatesDir, 'epl'), { recursive: true });
+      await fs.writeFile(path.join(templatesDir, 'epl.hbs'), layout);
+      await fs.writeFile(path.join(templatesDir, 'epl', 'list.hbs'), listPartial);
+
+      const outputDir = path.join(config.output.html, 'epl');
+      await renderTemplate(path.join(templatesDir, 'epl.hbs'), {
+        products: [
+          { name: 'A', price: '1' },
+          { name: 'B', price: '2' },
+        ],
+        layout: 'epl',
+        dataset: 'main',
+      }, outputDir, 'main', 'epl');
+
+      const html = await fs.readFile(path.join(outputDir, 'main.html'), 'utf8');
+      expect(html).toContain('<div class="row" data-ignition-row="products">');
+      expect(html).toContain('data-ignition-text="@p:products.*.price"');
+      // SSR значения на месте (страница без JS полная)
+      expect(html).toContain('<span class="p" data-ignition-text="@p:products.*.price">2</span>');
     } finally {
       config.source = originalConfig.source;
       config.output = originalConfig.output;

@@ -233,8 +233,10 @@ describe('A+B: Server-side block rendering + compact manifest (real engine)', ()
     const html = await fs.readFile(path.join(outputDir, 'main.html'), 'utf8');
 
     expect(html).toContain('data-ignition-data="products, categories"');
-    expect(html).toContain('<span class="product">A</span>');
-    expect(html).toContain('<span class="category">cat2</span>');
+    // each поверх products проецируется: строка-элемент (span) получает и
+    // маркер строки, и стикер @p; {{this}} не проецируется, но маркер имеет
+    expect(html).toContain('<span class="product" data-ignition-row="products" data-ignition-text="@p:products.*.name">A</span>');
+    expect(html).toContain('<span class="category" data-ignition-row="categories">cat2</span>');
 
     const match = html.match(/__IGNITION_MANIFEST__\s*=\s*(\{[\s\S]*?\});/);
     const manifest = JSON.parse(match[1]);

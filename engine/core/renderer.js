@@ -393,7 +393,10 @@ async function registerAllTemplatePartials(templatesDir, analysis = null) {
                         const partialName = path.basename(file.name, '.hbs');
                         const fullName = `${dir.name}/${partialName}`;
                         const content = await fs.readFile(path.join(partialsDir, file.name), 'utf8');
-                        const transformedContent = applyAutobindings(content);
+                        // Autobindings + row-scoped @p projections. Partials get
+                        // scopedOnly: their call-site context may be shifted, so
+                        // top-level stickers would resolve against wrong paths.
+                        const transformedContent = applyProjections(applyAutobindings(content), { scopedOnly: true });
 
                         // Deterministic auto-block decision (global, not per-task)
                         const autoBlock = autoBlocks.get(fullName);

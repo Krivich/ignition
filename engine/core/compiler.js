@@ -201,7 +201,7 @@ export function applyAutobindings(templateSource) {
  * @param {string} templateSource
  * @returns {string}
  */
-export function applyProjections(templateSource) {
+export function applyProjections(templateSource, { scopedOnly = false } = {}) {
   // Find context-shifting block regions ({{#each/with/block}} ... {{/...}})
   // with a stack matcher so nested blocks pair correctly.
   const tagRe = /\{\{#(?:each|with|block)\b|\{\{\/(?:each|with|block)\}\}/g;
@@ -230,32 +230,128 @@ export function applyProjections(templateSource) {
     }
   }
 
-  // Mask the regions so relative/per-item expressions aren't projected.
+  // Fine-grained candidates: a TOP-LEVEL {{#each <simplePath>}} whose body is
+  // exactly one element gets projected per-row (data-ignition-row marker on
+  // the row element, @p stickers on its simple leaf fields). Everything else
+  // (nested each, multi-node bodies, {{else}}, helper params, with/block)
+  // stays masked and keeps degrading to the host block's re-render.
+  const plan = kept.map(([start, end]) => {
+    const region = templateSource.slice(start, end);
+    const openM = /^\{\{#each\s+([a-zA-Z0-9_.]+)\s*\}\}/.exec(region);
+    if (!openM) return { start, end, mode: 'mask' };
+    const collection = openM[1];
+    // @p stickers resolve from the STATE ROOT - `this`/context-relative each
+    // params have no root-stable path, so they keep degrading to re-render.
+    if (collection === 'this' || collection.startsWith('this.') || /^\.+$/.test(collection)) {
+      return { start, end, mode: 'mask' };
+    }
+    const bodyStart = start + openM[0].length;
+    const closeIdx = region.lastIndexOf('{{/');
+    if (closeIdx < 0) return { start, end, mode: 'mask' };
+    const body = templateSource.slice(bodyStart, start + closeIdx);
+    if (!isProjectableEachBody(body)) return { start, end, mode: 'mask' };
+    return { start, end, mode: 'project', collection, bodyStart, closeTagStart: start + closeIdx };
+  });
+
+  // Mask ALL regions so the global pass only sees top-level expressions.
   const placeholders = [];
   let out = '';
   let pos = 0;
-  for (const r of kept) {
-    out += templateSource.slice(pos, r[0]);
+  for (const r of plan) {
+    out += templateSource.slice(pos, r.start);
     const ph = `\u0000IGN${placeholders.length}\u0000`;
-    placeholders.push(templateSource.slice(r[0], r[1]));
+    placeholders.push(r);
     out += ph;
-    pos = r[1];
+    pos = r.end;
   }
   out += templateSource.slice(pos);
 
   // Project `<tag ...>{{simplePath}}</tag>` -> same + data-ignition-text="path".
-  const PROJ_RE = /<([a-zA-Z][a-zA-Z0-9-]*)([^>]*?)>(\{\{\s*([a-zA-Z0-9_.@$*\/\[\]-]+?)\s*\}\})<\/\1>/g;
-  out = out.replace(PROJ_RE, (match, tag, attrs, expr, path) => {
-    if (/^(title|script|style|textarea)$/i.test(tag)) return match;
-    if (/data-ignition-(text|binding|block)\s*=/.test(attrs)) return match;
-    const bodyPath = path.trim();
-    return `<${tag}${attrs} data-ignition-text="${bodyPath.replace(/"/g, '&quot;')}">${expr}</${tag}>`;
-  });
+  // Partial sources skip this pass: their call-site context may be shifted
+  // ({{> partial item}}), so only row-scoped @p stickers (which are resolved
+  // against the state root explicitly) are safe there.
+  if (!scopedOnly) {
+    const PROJ_RE = /<([a-zA-Z][a-zA-Z0-9-]*)([^>]*?)>(\{\{\s*([a-zA-Z0-9_.@$*\/\[\]-]+?)\s*\}\})<\/\1>/g;
+    out = out.replace(PROJ_RE, (match, tag, attrs, expr, path) => {
+      if (/^(title|script|style|textarea)$/i.test(tag)) return match;
+      if (/data-ignition-(text|binding|block)\s*=/.test(attrs)) return match;
+      const bodyPath = path.trim();
+      return `<${tag}${attrs} data-ignition-text="${bodyPath.replace(/"/g, '&quot;')}">${expr}</${tag}>`;
+    });
+  }
 
+  // Restore: masked regions verbatim, projectable each regions with per-row
+  // projections (row marker + @p stickers).
   for (let p = 0; p < placeholders.length; p++) {
-    out = out.replace(`\u0000IGN${p}\u0000`, placeholders[p]);
+    const r = placeholders[p];
+    let restored;
+    if (r.mode === 'project') {
+      const closeTag = templateSource.slice(r.closeTagStart, r.end);
+      const body = templateSource.slice(r.bodyStart, r.closeTagStart);
+      // The row element is the body's FIRST tag - stamp the marker there.
+      const stamped = body.replace(
+        /^(\s*<[a-zA-Z][a-zA-Z0-9-]*[^>]*?)(\/?>)/,
+        (m, head, tail) => `${head} data-ignition-row="${r.collection}"${tail}`
+      );
+      restored = templateSource.slice(r.start, r.bodyStart) + projectEachBody(r.collection, stamped) + closeTag;
+    } else {
+      restored = templateSource.slice(r.start, r.end);
+    }
+    out = out.replace(`\u0000IGN${p}\u0000`, restored);
   }
   return out;
+}
+
+function isProjectableEachBody(body) {
+  if (/\{\{#(?:each|with|block)\b/.test(body)) return false;
+  if (/\{\{else\b/.test(body)) return false;
+  return singleTopLevelTag(body) !== null;
+}
+
+// Exactly one top-level element: whitespace + <tag ...> ... </tag> + whitespace.
+// Depth-walk over same-tag open/close pairs, so `</li><li>` tails fail.
+function singleTopLevelTag(body) {
+  const open = /^\s*<([a-zA-Z][a-zA-Z0-9-]*)\b/.exec(body);
+  if (!open) return null;
+  const tag = open[1];
+  const re = new RegExp(`<${tag}\\b|<\\/${tag}\\s*>`, 'g');
+  let depth = 0;
+  let m;
+  while ((m = re.exec(body)) !== null) {
+    if (m[0].startsWith('</')) {
+      depth--;
+      if (depth === 0) {
+        if (!/^\s*$/.test(body.slice(m.index + m[0].length))) return null;
+        return tag;
+      }
+    } else {
+      depth++;
+    }
+  }
+  return null;
+}
+
+// Relative leaf paths only: no ../, no @-paths, no helper calls, no {{this}}.
+// `{{this.x}}` maps to leaf `x`.
+function isSimpleItemPath(path) {
+  if (path === 'this' || path.startsWith('this.')) {
+    return path.length > 5;
+  }
+  if (path.includes('..') || path.includes('@') || path.includes('(') || path.includes(')')) return false;
+  return /^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*$/.test(path);
+}
+
+function projectEachBody(collection, body) {
+  const PROJ_RE = /<([a-zA-Z][a-zA-Z0-9-]*)([^>]*?)>(\{\{\s*([a-zA-Z0-9_.@$*\/\[\]-]+?)\s*\}\})<\/\1>/g;
+  return body.replace(PROJ_RE, (match, tag, attrs, expr, path) => {
+    if (/^(title|script|style|textarea)$/i.test(tag)) return match;
+    if (/data-ignition-(text|binding|block)\s*=/.test(attrs)) return match;
+    let leaf = path.trim();
+    if (leaf.startsWith('this.')) leaf = leaf.slice(5);
+    if (!isSimpleItemPath(leaf)) return match;
+    const sticker = `@p:${collection}.*.${leaf}`.replace(/"/g, '&quot;');
+    return `<${tag}${attrs} data-ignition-text="${sticker}">${expr}</${tag}>`;
+  });
 }
 
 /**
