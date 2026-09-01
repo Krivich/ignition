@@ -171,28 +171,52 @@ function wrapPartialWithReflection(content, blockName, dataPath, depends) {
 await registerCorePartials();
 registerHelpers();
 
+/**
+ * Per-template-context cache. All downstream derivations from a layout's raw
+ * source — AST analysis, pagination config, autobinding/projection transforms
+ * and the compiled Handlebars function — depend only on the template content,
+ * NOT on the data. Recomputing them for every page wastes the two most
+ * expensive steps (Handlebars.parse + Handlebars.compile). We key by the raw
+ * source string so any edit to a layout invalidates exactly that entry.
+ *
+ * @type {Map<string, {analysis: object, paginationConfig: object,
+ *        transformed: string, projected: string, compile: Function}>}
+ */
+const templateContextCache = new Map();
+
+function getTemplateContext(templateContent) {
+  let cached = templateContextCache.get(templateContent);
+  if (cached) return cached;
+  const analysis = analyzeTemplate(templateContent);
+  const paginationConfig = detectPaginationInTemplate(templateContent);
+  const transformed = applyAutobindings(templateContent);
+  const projected = applyProjections(transformed);
+  cached = {
+    analysis,
+    paginationConfig,
+    transformed,
+    projected,
+    compile: Handlebars.compile(projected)
+  };
+  templateContextCache.set(templateContent, cached);
+  return cached;
+}
+
+export function _clearTemplateCache() { templateContextCache.clear(); }
+
 export async function renderTemplate(templatePath, data, outputDir, dataset, layout) {
     try {
         // 1. Read template
         const templateContent = await fs.readFile(templatePath, 'utf8');
 
-        // 2. Analyze template for v2 reflection
-        const analysis = analyzeTemplate(templateContent);
-        
-        // 3. Detect pagination
-        const paginationConfig = detectPaginationInTemplate(templateContent);
+        // 2-6. Analyze, transform and compile — cached by template content
+        const ctx = getTemplateContext(templateContent);
+        const { analysis, paginationConfig, compile: template } = ctx;
 
-        // 4. Read and register ALL partials from templates (also collect raw sources before Handlebars compiles them)
+        // 4. Read and register ALL partials from templates (also collect raw
+        //    sources before Handlebars compiles them). Result is cached and
+        //    only refreshed when the templates directory changes.
         const templateSources = await registerAllTemplatePartials(config.source.templates, analysis);
-
-        // 5. Apply v2 autobinding transformations
-        const transformedContent = applyAutobindings(templateContent);
-
-        // 5b. Auto-generate point-projection reflection (data-ignition-text)
-        const projectedContent = applyProjections(transformedContent);
-
-        // 6. Compile template
-        const template = Handlebars.compile(projectedContent);
 
         // 6. Process pagination
         if (paginationConfig.enabled) {
@@ -228,13 +252,28 @@ export async function renderTemplate(templatePath, data, outputDir, dataset, lay
             const liveController = await hasController(layout, dataset);
 
             const renderedManifest = jsonSafe(getManifest());
-            const derivedInitialData = jsonSafe(deriveInitialState(finalHtml, pureData, analysis, liveController));
             const templatesJson = jsonSafe(templateSources);
-            finalHtml = finalHtml
-                .split('IGNITION_INITIAL_DATA_PLACEHOLDER__').join(derivedInitialData)
-                .split('IGNITION_MANIFEST_PLACEHOLDER__').join(renderedManifest)
-                .split('IGNITION_TEMPLATES_PLACEHOLDER__').join(templatesJson)
-                .split('"__IGNITION_TEMPLATES__": null').join('"__IGNITION_TEMPLATES__": ' + templatesJson);
+
+            // Compute the derived client state once (was computed twice — once
+            // for inlining, once for the boot payload — with identical inputs).
+            // Placeholders in the html carry no data-ignition-* markers, so the
+            // extraction result is the same whether run before or after the
+            // substitution below.
+            const initialData = deriveInitialState(finalHtml, pureData, analysis, liveController);
+            const derivedInitialData = jsonSafe(initialData);
+
+            // Single-pass placeholder substitution: swap all three markers
+            // (plus the empty-template fallback) in one sweep instead of four
+            // full-string scans.
+            finalHtml = finalHtml.replace(
+                /IGNITION_INITIAL_DATA_PLACEHOLDER__|IGNITION_MANIFEST_PLACEHOLDER__|IGNITION_TEMPLATES_PLACEHOLDER__|"__IGNITION_TEMPLATES__": null/g,
+                (m) => m === 'IGNITION_INITIAL_DATA_PLACEHOLDER__'
+                    ? derivedInitialData
+                    : m === 'IGNITION_MANIFEST_PLACEHOLDER__'
+                        ? renderedManifest
+                        : templatesJson
+            );
+
             // v2: preload the full dataset only for live (interactive) pages —
             // a page that no one can change doesn't need the data fetched early.
             const liveRuntime = needsRuntime(finalHtml, analysis);
@@ -244,7 +283,7 @@ export async function renderTemplate(templatePath, data, outputDir, dataset, lay
             // v2: auto-inject the runtime when the page is reactive, so the
             // developer does not hand-write the runtime <script> tags.
             finalHtml = injectClientBoot(finalHtml, {
-                initialData: deriveInitialState(finalHtml, pureData, analysis, liveController),
+                initialData,
                 templates: templateSources
             }, live, paginationConfig.enabled);
             // External controller (explicit "live page" declaration).
@@ -273,6 +312,38 @@ export async function renderTemplate(templatePath, data, outputDir, dataset, lay
 let autoBlockCache = new Map();
 
 /**
+ * Compute a cheap signature for the templates tree: the sorted list of every
+ * .hbs file's name + mtime + size. Stat calls are metadata-only I/O, far cheaper
+ * than re-reading + transforming + re-registering every partial on each render.
+ * @returns {Promise<string>}
+ */
+async function templatesSignature(templatesDir) {
+  const entries = [];
+  const walk = async (dir, prefix) => {
+    let list;
+    try {
+      list = await fs.readdir(dir, { withFileTypes: true });
+    } catch (err) {
+      if (err.code === 'ENOENT') return;
+      throw err;
+    }
+    for (const e of list) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        await walk(full, `${prefix}${e.name}/`);
+      } else if (e.isFile() && e.name.endsWith('.hbs')) {
+        const s = await fs.stat(full);
+        entries.push(`${prefix}${e.name}:${s.mtimeMs}:${s.size}`);
+      }
+    }
+  };
+  await walk(templatesDir, '');
+  return entries.sort().join('|');
+}
+
+const partialCache = new Map();
+
+/**
  * Compute the set of auto-block partials deterministically across EVERY layout.
  * A partial used as `{{> some/partial <data>}}` in any layout becomes an
  * auto-block. Everything is decided globally (scanned once and cached) so that
@@ -281,8 +352,8 @@ let autoBlockCache = new Map();
  *
  * @returns {Promise<Map<string, {dataPath: string, depends: string}>>}
  */
-async function detectAutoBlocks(templatesDir) {
-    if (autoBlockCache.has(templatesDir)) return autoBlockCache.get(templatesDir);
+async function detectAutoBlocks(templatesDir, signature) {
+    if (autoBlockCache.has(signature)) return autoBlockCache.get(signature);
     const map = new Map();
     const templateDirs = await fs.readdir(templatesDir, { withFileTypes: true });
     for (const entry of templateDirs) {
@@ -296,14 +367,20 @@ async function detectAutoBlocks(templatesDir) {
             }
         }
     }
-    autoBlockCache.set(templatesDir, map);
+    autoBlockCache.set(signature, map);
     return map;
 }
 
 async function registerAllTemplatePartials(templatesDir, analysis = null) {
+    const signature = await templatesSignature(templatesDir);
+    // Fast path: templates unchanged → reuse cached sources + already-registered
+    // partials, avoiding the full read/transform/register pass on every render.
+    const cached = partialCache.get(signature);
+    if (cached) return cached;
+
     const sources = {};
     try {
-        const autoBlocks = await detectAutoBlocks(templatesDir);
+        const autoBlocks = await detectAutoBlocks(templatesDir, signature);
         const templateDirs = await fs.readdir(templatesDir, { withFileTypes: true });
 
         for (const dir of templateDirs) {
@@ -347,6 +424,7 @@ async function registerAllTemplatePartials(templatesDir, analysis = null) {
             logger.error('❌ Failed to register template partials', { error: err.message });
         }
     }
+    partialCache.set(signature, sources);
     return sources;
 }
 
@@ -438,10 +516,18 @@ export async function generateClientArtifacts(dataPath, layout, dataset) {
         // 3. Create directories
         await safeMkdir(outputDataDir);
 
-        // 4. Save data with formatting
+        // 4. Save data with formatting (skip rewrite if the target already
+        //    contains identical bytes — avoids needless disk churn in watch mode)
         const parsedData = JSON.parse(dataContent);
         const formattedData = JSON.stringify(parsedData, null, 2);
-        await atomicWrite(outputDataPath, formattedData);
+        let unchanged = false;
+        try {
+            const existing = await fs.readFile(outputDataPath, 'utf8');
+            unchanged = existing === formattedData;
+        } catch (_) { /* target missing → must write */ }
+        if (!unchanged) {
+            await atomicWrite(outputDataPath, formattedData);
+        }
 
         logger.info(`✅ Generated client data for ${layout}/${dataset}.json`);
 
