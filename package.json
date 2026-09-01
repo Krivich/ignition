@@ -11,7 +11,9 @@
     "serve": "npx http-server output/public -o",
     "dev": "npm-run-all --parallel watch serve",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "bench": "node engine/perf/bench.js --scale 1",
+    "bench:heavy": "node engine/perf/bench.js --scale 3"
   },
   "dependencies": {
     "chokidar": "^3.5.3",
