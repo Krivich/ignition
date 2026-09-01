@@ -144,6 +144,34 @@ Class and attribute projections (`data-ignition-class`, `data-ignition-attr-*`) 
 <button type="submit" data-ignition-attr-disabled="!ui.isValid">Publish</button>
 ```
 
+### Row-scoped projections (fine-grained lists)
+
+Inside a top-level `{{#each}}` the compiler projects row fields automatically:
+
+```handlebars
+{{#each products}}
+  <div class="row">
+    <span>{{name}}</span>
+    <span>{{price}}</span>
+  </div>
+{{/each}}
+```
+
+The compiled HTML carries `data-ignition-row="products"` on the row element and
+`data-ignition-text="@p:products.*.name"` stickers on its fields. When one cell
+changes (`state.products[3].price = 'x'`), only that text node is patched - the
+block does **not** re-render. For lists outside a block this is the only update
+path; inside a block it replaces the full re-render (see §13).
+
+To qualify, the row body must be **pure**: every expression a simple item field
+(`{{name}}`, `{{item.meta.price}}`). Anything else - `{{#if}}`, helpers,
+multi-expression nodes, `{{this}}` - makes the compiler fall back to the
+regular block re-render for that list (still correct, just not fine-grained).
+
+Add `data-ignition-key="{{id}}"` on the row element when rows can be
+reordered, inserted or deleted mid-list: rows are then matched by key and keep
+their DOM identity (focus, input values, scroll) across structural changes.
+
 ## 6. Controller
 
 The controller is where you attach events and mutate state. Create `input/controllers/{layout}.js`:
@@ -297,9 +325,16 @@ Keep the input outside the block, pass only the list into the partial:
 
 The `skills` partial renders `{{#each this}} ... {{/each}}`. When `state.skills` changes, only the block re-renders.
 
+If the row body is pure (simple fields only, see §5), leaf-level edits skip the
+re-render entirely: `state.skills[2].level = 4` patches one text node. Adding
+or removing rows still re-renders the block.
+
 ### Focus inside a block
 
-Blocks replace their `innerHTML` on re-render. Keep focused inputs outside blocks when possible. When focus must live inside, use `afterHydrate`:
+Blocks re-render through a reconcile: unchanged rows keep their DOM nodes, so
+focus, input values and scroll survive a re-render. A row whose structure
+changed is swapped for a fresh node - keep focused inputs in stable rows, or
+outside blocks when possible. For custom restore logic use `afterHydrate`:
 
 ```js
 api.blockOptions.afterHydrate = function(block) {
@@ -392,6 +427,45 @@ The `{{#block}}` helper:
 
 The client receives the raw partial source in `__IGNITION_TEMPLATES__` so it can re-render blocks without the server wrapper.
 
+### Hydration: reconcile, not an innerHTML swap
+
+When a block re-renders, the new HTML is parsed off-DOM and reconciled against
+the live children pairwise:
+
+- identical subtree -> the old node stays (identity, focus, listeners preserved);
+- same structure, different text/attributes -> the old node is patched in place;
+- structural divergence -> the fresh node replaces the old one.
+
+The fallback guarantees the resulting DOM is always identical to a naive
+innerHTML swap; reconcile only decides *what gets reused*. Rows marked with
+`data-ignition-key` are matched by key first, so reorder/insert/delete reuse
+the right nodes instead of shifting by index.
+
+### Fine-grained rows: leaf changes without a block re-render
+
+Every state change is classified by the runtime as `leaf` (a primitive written
+over an existing slot) or `structural` (a subtree replaced, an array resized, a
+key deleted). Blocks subscribe to their `depends` paths and normally re-render
+on any change.
+
+For a block whose list qualifies as fine-grained (pure row body, see §5), the
+compiler records the covered collection and stamps
+`data-ignition-fine="path"` on the block element. The block then re-renders
+**only on structural changes**; leaf changes are handled by the row stickers.
+The pipeline:
+
+```
+compiler: pure {{#each}} body -> @p stickers + coverage set
+renderer: coverage -> data-ignition-fine on the block wrapper
+runtime:  leaf change  -> sticker patches the cell, block idle
+          structural   -> block re-render + row rescope (stickers rebind)
+```
+
+After a structural re-render that moved rows (keyed reorder), a single
+rescope pass re-derives each row's index and rebinds drifted stickers, so
+addresses stay valid. Stickers whose collection is not yet in state (a
+controller computes it after boot) bind lazily and never blank SSR text.
+
 ## 14. Auto-Binding Internals
 
 The build scans the compiled Handlebars output and injects `data-ignition-binding` attributes for known patterns:
@@ -449,13 +523,19 @@ The runtime diffs the new dataset against `__IGNITION_MANIFEST__` and re-renders
 | `data-ignition-class="class: path"` | Any | Class toggle. Multiple rules with `;`. Use `!` to negate |
 | `data-ignition-attr-{name}="path"` | Any | Attribute/property toggle. Use `!` to negate |
 | `data-ignition-include="path"` | `<meta>` | Force-include a state branch in compact initial data |
+| `data-ignition-key="value"` | Row element | Stable row identity for list reconcile (survives reorder/insert/delete) |
+| `data-ignition-row="path"` | Row element | Marks a repeated row and its collection (auto-generated inside top-level `{{#each}}`) |
+| `data-ignition-fine="a, b"` | Block | Depends paths fully covered by row stickers: leaf changes skip the block re-render (auto-generated) |
 
 There is no `data-ignition-on` in user templates. The controller handles events via native `addEventListener`.
 
 ## 19. API Reference
 
 ### `state.subscribe(path, callback)`
-Subscribe to changes at a path.
+Subscribe to changes at a path. The callback receives
+`(fullPath, oldVal, newVal, kind)` where `kind` is `'leaf'` (a primitive written
+over an existing slot) or `'structural'` (a subtree replaced, an array resized,
+a key deleted). Returns an unsubscribe function.
 
 ### `state.set(path, value)`
 Set a nested value by dot-separated path.

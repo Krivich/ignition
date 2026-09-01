@@ -149,6 +149,7 @@ Key settings in `engine/config/default.js`:
 
 - Rendering JSON + templates → HTML
 - Client-side reactivity (blocks, bindings, actions, computed)
+- Fine-grained updates: row-scoped point projections, leaf/structural change classification
 - Pagination as a template pattern
 - Atomic file replacement
 - Incremental rebuilds

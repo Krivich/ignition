@@ -116,6 +116,7 @@ npx serve output/public
 - **Pagination**: see [REACTIVITY.md §8](REACTIVITY.md#8-pagination)
 - **Reactive blocks**: see [REACTIVITY.md §3](REACTIVITY.md#3-reactive-regions-auto-blocks)
 - **Auto-bindings & boolean attributes**: see [REACTIVITY.md §4](REACTIVITY.md#4-auto-bindings)
+- **Point projections & fine-grained lists**: see [REACTIVITY.md §5](REACTIVITY.md#5-point-projections)
 - **Controller API**: see [REACTIVITY.md §6](REACTIVITY.md#6-controller)
 - **Data modes & lifecycle**: see [REACTIVITY.md §7](REACTIVITY.md#7-data-modes) and [REACTIVITY.md §11](REACTIVITY.md#11-page-lifecycle)
 
