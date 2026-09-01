@@ -16,7 +16,7 @@
     "bench:heavy": "node engine/perf/bench.js --scale 3"
   },
   "dependencies": {
-    "chokidar": "^3.5.3",
+    "chokidar": "^5.0.0",
     "commander": "^14.0.2",
     "glob": "^13.0.6",
     "handlebars": "^4.7.9",
