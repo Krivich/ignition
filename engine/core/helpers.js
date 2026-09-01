@@ -1,5 +1,6 @@
 import deepGet from '../utils/deepGet.js';
 import { parseBlockData, buildBlockContext } from '../utils/parseBlockData.js';
+import { fineCoverage } from './fineRegistry.js';
 
 let manifest = {};
 
@@ -112,10 +113,15 @@ export function registerBlockHelper(Handlebars, env) {
     const dataPath = options.hash.data;
     const depends =
       options.hash.depends !== undefined ? options.hash.depends : dataPath || '';
+    // Fine coverage comes from an explicit `fine` hash param (autoblock
+    // wrapper) or from the partial's registration record (explicit
+    // {{#block}} calls that resolve the partial by name).
     const layout = this && this.layout ? this.layout : '';
     // If the caller already passed a fully-qualified name (layout/partial),
     // don't prefix it again, else prefix with the current layout.
     const blockName = name.includes('/') ? name : layout ? `${layout}/${name}` : name;
+    const fineCoverageSet = fineCoverage.get(blockName);
+    const fine = options.hash.fine ?? (fineCoverageSet ? [...fineCoverageSet].join(', ') : undefined);
 
     const parsed = parseBlockData(dataPath);
     // dataPath is always root-relative; resolve the manifest slice from the
@@ -153,6 +159,7 @@ export function registerBlockHelper(Handlebars, env) {
       `data-ignition-block="${escapeAttr(blockName)}"`,
       dataPath ? `data-ignition-data="${escapeAttr(dataPath)}"` : '',
       depends ? `data-ignition-depends="${escapeAttr(depends)}"` : '',
+      fine ? `data-ignition-fine="${escapeAttr(fine)}"` : '',
     ]
       .filter(Boolean)
       .join(' ');

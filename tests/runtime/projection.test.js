@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createReactiveState } from '../../engine/core/runtime/state.js';
 import { initBinding, initBlocks, rescopeEachBindings } from '../../engine/core/runtime/binding.js';
@@ -119,5 +119,78 @@ describe('fine-grained: row-scoped проекции (@p) внутри #each', ()
     expect(document.querySelectorAll('.p')[3].textContent).toBe('NEW3');
     // а ряды 0..2 не перерисовались мусором
     expect(document.querySelectorAll('.p')[0].textContent).toBe('p0');
+  });
+
+  describe('fine-блоки (data-ignition-fine): leaf-изменения без ре-рендера', () => {
+    function fineBlockHtml(fine) {
+      const fineAttr = fine ? ` data-ignition-fine="${fine}"` : '';
+      return `<div data-ignition-block="fg/list" data-ignition-data="products"${fineAttr}></div>`;
+    }
+
+    function bootFineBlock(fine) {
+      // Data-driven шаблон: строка на каждый элемент products (как реальный
+      // {{#each}}), счётчик вызовов = счётчик ре-рендеров блока.
+      const tpl = vi.fn((data) => data.map((_, i) => rowHtml(i)).join(''));
+      registerTemplate('fg/list', tpl);
+      document.body.innerHTML = fineBlockHtml(fine);
+      initBlocks(state);
+      return tpl;
+    }
+
+    it('leaf-изменение не перерендеривает блок, стикер патчит ячейку', () => {
+      const tpl = bootFineBlock('products');
+
+      state.products[1].price = 'CHANGED';
+
+      expect(tpl).toHaveBeenCalledTimes(1); // только стартовый render, ре-рендера нет
+      const spans = document.querySelectorAll('.p');
+      expect(spans[1].textContent).toBe('CHANGED');
+      expect(spans[0].textContent).toBe('p0');
+    });
+
+    it('структурное изменение (push) перерендеривает блок', () => {
+      const tpl = bootFineBlock('products');
+
+      state.products.push({ name: 'n3', price: 'p3' });
+
+      expect(tpl.mock.calls.length).toBeGreaterThan(1);
+      expect(document.querySelectorAll('.row').length).toBe(4);
+      state.products[3].price = 'NEW3';
+      expect(document.querySelectorAll('.p')[3].textContent).toBe('NEW3');
+    });
+
+    it('замена массива перерендеривает и переподписывает строки', () => {
+      const tpl = bootFineBlock('products');
+
+      state.products = [
+        { name: 'x0', price: 'q0' },
+        { name: 'x1', price: 'q1' },
+      ];
+
+      expect(tpl.mock.calls.length).toBeGreaterThan(1);
+      const spans = document.querySelectorAll('.p');
+      expect(spans.length).toBe(2);
+      expect(spans[1].textContent).toBe('q1');
+      state.products[0].price = 'Q0';
+      expect(spans[0].textContent).toBe('Q0');
+    });
+
+    it('обычный блок без data-ignition-fine: leaf-изменение по-прежнему ре-рендерит (регрессия)', () => {
+      const tpl = bootFineBlock(null);
+
+      state.products[1].price = 'CHANGED';
+
+      expect(tpl.mock.calls.length).toBeGreaterThan(1);
+      expect(document.querySelectorAll('.p')[1].textContent).toBe('CHANGED');
+    });
+
+    it('fine-путь, не совпадающий с depends, не глушит ре-рендер', () => {
+      const tpl = bootFineBlock('somethingElse');
+
+      state.products[1].price = 'CHANGED';
+
+      expect(tpl.mock.calls.length).toBeGreaterThan(1);
+      expect(document.querySelectorAll('.p')[1].textContent).toBe('CHANGED');
+    });
   });
 });

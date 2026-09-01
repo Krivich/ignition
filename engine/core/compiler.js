@@ -201,7 +201,7 @@ export function applyAutobindings(templateSource) {
  * @param {string} templateSource
  * @returns {string}
  */
-export function applyProjections(templateSource, { scopedOnly = false } = {}) {
+export function applyProjections(templateSource, { scopedOnly = false, onFine = null } = {}) {
   // Find context-shifting block regions ({{#each/with/block}} ... {{/...}})
   // with a stack matcher so nested blocks pair correctly.
   const tagRe = /\{\{#(?:each|with|block)\b|\{\{\/(?:each|with|block)\}\}/g;
@@ -281,7 +281,10 @@ export function applyProjections(templateSource, { scopedOnly = false } = {}) {
   }
 
   // Restore: masked regions verbatim, projectable each regions with per-row
-  // projections (row marker + @p stickers).
+  // projections (row marker + @p stickers). A collection is FINE-GRAINABLE
+  // when every expression in the row body became a sticker — then leaf-only
+  // changes under it can skip the host block's re-render entirely.
+  const fineCollections = new Set();
   for (let p = 0; p < placeholders.length; p++) {
     const r = placeholders[p];
     let restored;
@@ -293,12 +296,15 @@ export function applyProjections(templateSource, { scopedOnly = false } = {}) {
         /^(\s*<[a-zA-Z][a-zA-Z0-9-]*[^>]*?)(\/?>)/,
         (m, head, tail) => `${head} data-ignition-row="${r.collection}"${tail}`
       );
-      restored = templateSource.slice(r.start, r.bodyStart) + projectEachBody(r.collection, stamped) + closeTag;
+      const projectedBody = projectEachBody(r.collection, stamped);
+      if (projectedBody.covered) fineCollections.add(r.collection);
+      restored = templateSource.slice(r.start, r.bodyStart) + projectedBody.text + closeTag;
     } else {
       restored = templateSource.slice(r.start, r.end);
     }
     out = out.replace(`\u0000IGN${p}\u0000`, restored);
   }
+  if (onFine) onFine(fineCollections);
   return out;
 }
 
@@ -343,7 +349,12 @@ function isSimpleItemPath(path) {
 
 function projectEachBody(collection, body) {
   const PROJ_RE = /<([a-zA-Z][a-zA-Z0-9-]*)([^>]*?)>(\{\{\s*([a-zA-Z0-9_.@$*\/\[\]-]+?)\s*\}\})<\/\1>/g;
-  return body.replace(PROJ_RE, (match, tag, attrs, expr, path) => {
+  // Coverage audit: the collection only qualifies for fine-grained updates
+  // when EVERY expression in the body is a simple leaf that got a sticker.
+  // Anything else (conditionals, helpers, multi-expr nodes, {{this}}) can
+  // change without a sticker firing and keeps the block re-render mandatory.
+  const allExprs = body.match(/\{\{[^}]*\}\}/g) || [];
+  const text = body.replace(PROJ_RE, (match, tag, attrs, expr, path) => {
     if (/^(title|script|style|textarea)$/i.test(tag)) return match;
     if (/data-ignition-(text|binding|block)\s*=/.test(attrs)) return match;
     let leaf = path.trim();
@@ -352,6 +363,12 @@ function projectEachBody(collection, body) {
     const sticker = `@p:${collection}.*.${leaf}`.replace(/"/g, '&quot;');
     return `<${tag}${attrs} data-ignition-text="${sticker}">${expr}</${tag}>`;
   });
+  const stickerCount = (text.match(new RegExp(`data-ignition-text="@p:${collection}\\.\\*\\.`, 'g')) || []).length;
+  const covered =
+    allExprs.length > 0 &&
+    stickerCount === allExprs.length &&
+    !/\{\{[#^\/]/.test(body);
+  return { text, covered };
 }
 
 /**

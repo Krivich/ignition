@@ -124,6 +124,12 @@ async function benchCSR() {
     out.dashboardReplaceSales200 = timeIt(() => {
       st.metrics.sales = fresh();
     }, 10);
+    st.ui.period = 'month';
+    // Fine-grained метрика: leaf-мутация одной ячейки. На блоке с
+    // data-ignition-fine это точечный патч стикером без ре-рендера блока.
+    out.dashboardPointUpdate = timeIt((i) => {
+      st.filteredSales[i % rows.length].amount = 1000 + i;
+    }, 20);
     dom.window.close();
   }
 
@@ -191,6 +197,7 @@ async function main() {
     ['dashboard period -> month (all ' + (csr.salesRows ?? '?') + ' rows)', { median: csr.dashboardPeriodToMonth, min: csr.dashboardPeriodToMonth, max: csr.dashboardPeriodToMonth }],
     ['dashboard period -> week (7 rows)', { median: csr.dashboardPeriodToWeek, min: csr.dashboardPeriodToWeek, max: csr.dashboardPeriodToWeek }],
     ['dashboard sales replace (' + (csr.salesRows ?? '?') + ')', csr.dashboardReplaceSales200],
+    ['dashboard point cell update', csr.dashboardPointUpdate],
     ['form field edit', csr.formFieldEdit],
   ];
   for (const [name, r] of rows) {

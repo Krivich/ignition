@@ -24,42 +24,56 @@ export function createReactiveState(initialData) {
   const ephemeralTimers = new Map();
   let suppressingEphemeralCancel = false;
 
-  function fireCallbacks(node, fullPath, oldVal, newVal) {
+  // Changes are classified so blocks can skip re-renders on pure value edits:
+  //  - 'leaf'       — a primitive written over an existing slot (a cell patch;
+  //                   row-scoped @p stickers handle it),
+  //  - 'structural' — a subtree replaced (object/array value), an array
+  //                   resized (length or a growing index) or a key deleted.
+  function classifyChange(target, key, value) {
+    if (value !== null && typeof value === 'object') return 'structural';
+    if (Array.isArray(target)) {
+      if (key === 'length') return 'structural';
+      if (typeof key === 'string' && /^\d+$/.test(key) && Number(key) >= target.length) return 'structural';
+    }
+    return 'leaf';
+  }
+
+  function fireCallbacks(node, fullPath, oldVal, newVal, kind) {
     for (const cb of node.callbacks) {
-      cb(fullPath, oldVal, newVal);
+      cb(fullPath, oldVal, newVal, kind);
     }
   }
 
   // Walk the affected branch: fire ancestors + self (root handles '*').
-  function doNotify(fullPath, oldVal, newVal) {
-    fireCallbacks(rootTrie, fullPath, oldVal, newVal);
+  function doNotify(fullPath, oldVal, newVal, kind) {
+    fireCallbacks(rootTrie, fullPath, oldVal, newVal, kind);
     let node = rootTrie;
     const segs = pathSegments(fullPath);
     for (let i = 0; i < segs.length; i++) {
       node = node.children.get(segs[i]);
       if (!node) break;
-      fireCallbacks(node, fullPath, oldVal, newVal);
+      fireCallbacks(node, fullPath, oldVal, newVal, kind);
     }
     // Descendants: if the mutated node exists, fire every callback in its
     // subtree (a parent/whole-slice replacement notifies child listeners).
-    if (node) notifySubtree(node, fullPath, oldVal, newVal);
+    if (node) notifySubtree(node, fullPath, oldVal, newVal, kind);
   }
 
-  function notifySubtree(node, fullPath, oldVal, newVal) {
+  function notifySubtree(node, fullPath, oldVal, newVal, kind) {
     for (const child of node.children.values()) {
-      fireCallbacks(child, fullPath, oldVal, newVal);
-      notifySubtree(child, fullPath, oldVal, newVal);
+      fireCallbacks(child, fullPath, oldVal, newVal, kind);
+      notifySubtree(child, fullPath, oldVal, newVal, kind);
     }
   }
 
-  function notify(fullPath, oldVal, newVal) {
+  function notify(fullPath, oldVal, newVal, kind) {
     if (notifyDepth > 0) {
-      pendingNotifications.push({ fullPath, oldVal, newVal });
+      pendingNotifications.push({ fullPath, oldVal, newVal, kind });
       return;
     }
     notifyDepth++;
     const notified = new Set();
-    doNotify(fullPath, oldVal, newVal);
+    doNotify(fullPath, oldVal, newVal, kind);
     notified.add(fullPath);
     notifyDepth--;
     while (pendingNotifications.length > 0) {
@@ -67,7 +81,7 @@ export function createReactiveState(initialData) {
       if (notified.has(pending.fullPath)) continue;
       notified.add(pending.fullPath);
       notifyDepth++;
-      doNotify(pending.fullPath, pending.oldVal, pending.newVal);
+      doNotify(pending.fullPath, pending.oldVal, pending.newVal, pending.kind);
       notifyDepth--;
     }
   }
@@ -98,13 +112,14 @@ export function createReactiveState(initialData) {
         if (rawOld === rawNew) return true;
         target[key] = value;
         const path = prefix ? `${prefix}.${String(key)}` : String(key);
+        const kind = classifyChange(target, key, value);
         // A permanent (non-ephemeral) assignment cancels any pending ephemeral
         // timer for this path, so a stale timer cannot null it out later.
         if (!suppressingEphemeralCancel && ephemeralTimers.has(path)) {
           clearTimeout(ephemeralTimers.get(path));
           ephemeralTimers.delete(path);
         }
-        notify(path, old, value);
+        notify(path, old, value, kind);
         return true;
       },
 
@@ -113,7 +128,7 @@ export function createReactiveState(initialData) {
         const old = target[key];
         delete target[key];
         const path = prefix ? `${prefix}.${String(key)}` : String(key);
-        notify(path, old, undefined);
+        notify(path, old, undefined, 'structural');
         return true;
       }
     });

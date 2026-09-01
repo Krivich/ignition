@@ -74,7 +74,7 @@ describe('ignition.state — реактивная модель', () => {
       const onChange = vi.fn();
       state.subscribe('products', onChange);
       state.products.loading = true;
-      expect(onChange).toHaveBeenCalledWith('products.loading', expect.anything(), expect.anything());
+      expect(onChange).toHaveBeenCalledWith('products.loading', expect.anything(), expect.anything(), 'leaf');
     });
 
     it('сообщает путь при push в массив', () => {

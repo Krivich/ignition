@@ -412,8 +412,21 @@ export function initBlocks(state, options = {}) {
       render();
     }
 
+    // Fine-grained depends paths (stamped by the compiler when every data
+    // flow from that path into the template goes through @p stickers): leaf
+    // changes under them patch cells via stickers, only structural changes
+    // re-render the block.
+    const fineStr = block.getAttribute('data-ignition-fine') || '';
+    const finePaths = new Set(fineStr.split(',').map((s) => s.trim()).filter(Boolean));
+
     for (const dep of [...depends, ...extraDeps]) {
-      state.subscribe(dep, () => render());
+      if (finePaths.has(dep)) {
+        state.subscribe(dep, (p, o, n, kind) => {
+          if (kind === 'structural') render();
+        });
+      } else {
+        state.subscribe(dep, () => render());
+      }
     }
   });
 }

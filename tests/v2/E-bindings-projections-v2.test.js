@@ -313,7 +313,46 @@ describe('E5/E6: автопроекции (data-ignition-text из {{expr}} в �
     }
   });
 
-  it('партиал с #each получает проекции при регистрации (SSR)', async () => {
+  it('onFine: чистый leaf-тело each — коллекция покрыта', () => {
+    const tpl = `{{#each products}}<div class="row"><span>{{name}}</span><span>{{price}}</span></div>{{/each}}`;
+    let fine = null;
+    applyProjections(tpl, { scopedOnly: true, onFine: (s) => { fine = s; } });
+    expect(fine).toBeInstanceOf(Set);
+    expect(fine.has('products')).toBe(true);
+  });
+
+  it('onFine: {{#if}} внутри тела — коллекция НЕ покрыта (структурные флипы требуют ре-рендера)', () => {
+    const tpl = `{{#each items}}<div>{{#if flag}}<span>{{name}}</span>{{/if}}</div>{{/each}}`;
+    let fine = null;
+    applyProjections(tpl, { scopedOnly: true, onFine: (s) => { fine = s; } });
+    expect(fine.has('items')).toBe(false);
+  });
+
+  it('onFine: мульти-выражение в теле — НЕ покрыта', () => {
+    const tpl = `{{#each items}}<div><span>{{a}} {{b}}</span></div>{{/each}}`;
+    let fine = null;
+    applyProjections(tpl, { scopedOnly: true, onFine: (s) => { fine = s; } });
+    expect(fine.has('items')).toBe(false);
+  });
+
+  it('onFine: хелпер или {{this}} в теле — НЕ покрыта', () => {
+    const withHelper = `{{#each items}}<div><span>{{upper name}}</span></div>{{/each}}`;
+    const withThis = `{{#each items}}<div><span>{{this}}</span></div>{{/each}}`;
+    let fineA = null, fineB = null;
+    applyProjections(withHelper, { scopedOnly: true, onFine: (s) => { fineA = s; } });
+    applyProjections(withThis, { scopedOnly: true, onFine: (s) => { fineB = s; } });
+    expect(fineA.has('items')).toBe(false);
+    expect(fineB.has('items')).toBe(false);
+  });
+
+  it('onFine: тело без выражений — НЕ покрыта (нечего патчить)', () => {
+    const tpl = `{{#each items}}<div class="row"></div>{{/each}}`;
+    let fine = null;
+    applyProjections(tpl, { scopedOnly: true, onFine: (s) => { fine = s; } });
+    expect(fine.has('items')).toBe(false);
+  });
+
+  it('SSR: обёртка блока штампует data-ignition-fine для покрытых путей', async () => {
     const originalConfig = {
       source: { ...config.source },
       output: { ...config.output },

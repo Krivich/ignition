@@ -17,6 +17,7 @@ import {
 import { paginateCollection, preparePageData } from './pagination.js';
 import { resetManifest, getManifest } from './helpers.js';
 import { deriveInitialState, needsRuntime } from '../utils/deriveInitialState.js';
+import { fineCoverage } from './fineRegistry.js';
 import { analyzeTemplate, applyAutobindings, applyProjections } from './compiler.js';
 import config from '../config/default.js';
 
@@ -158,13 +159,16 @@ async function injectController(html, layout, dataset, outputDir) {
  * @param {string} depends - Dependencies for the block
  * @returns {string} - Wrapped template content
  */
-function wrapPartialWithReflection(content, blockName, dataPath, depends) {
+function wrapPartialWithReflection(content, blockName, dataPath, depends, fine = null) {
   // Use the existing {{#block}} helper to wrap the partial.
   // `autoblock=1` tells the helper to render the inline raw body with the
   // current context (and record the manifest slice from the root), instead of
   // resolving the partial by name again (which is THIS same wrapper and would
   // recurse). Explicit {{#block}} helpers in layouts don't set this flag.
-  return `{{#block name="${blockName}" data="${dataPath}" depends="${depends}" autoblock=1}}${content}{{/block}}`;
+  // `fine` lists depends paths fully covered by @p stickers - the runtime
+  // block skips re-renders for leaf-only changes under them.
+  const fineAttr = fine && fine.size ? ` fine="${[...fine].join(', ')}"` : '';
+  return `{{#block name="${blockName}" data="${dataPath}" depends="${depends}"${fineAttr} autoblock=1}}${content}{{/block}}`;
 }
 
 // Initialize Handlebars
@@ -396,7 +400,11 @@ async function registerAllTemplatePartials(templatesDir, analysis = null) {
                         // Autobindings + row-scoped @p projections. Partials get
                         // scopedOnly: their call-site context may be shifted, so
                         // top-level stickers would resolve against wrong paths.
-                        const transformedContent = applyProjections(applyAutobindings(content), { scopedOnly: true });
+                        let fine = null;
+                        const transformedContent = applyProjections(applyAutobindings(content), {
+                            scopedOnly: true,
+                            onFine: (s) => { fine = s; },
+                        });
 
                         // Deterministic auto-block decision (global, not per-task)
                         const autoBlock = autoBlocks.get(fullName);
@@ -407,7 +415,8 @@ async function registerAllTemplatePartials(templatesDir, analysis = null) {
                                 transformedContent,
                                 fullName,
                                 autoBlock.dataPath,
-                                autoBlock.depends
+                                autoBlock.depends,
+                                fine
                             );
                             Handlebars.registerPartial(fullName, wrappedContent);
                             // Client re-render uses the raw partial source (without the SSR wrapper)
@@ -417,6 +426,14 @@ async function registerAllTemplatePartials(templatesDir, analysis = null) {
                             Handlebars.registerPartial(fullName, transformedContent);
                             sources[fullName] = transformedContent;
                             logger.debug(`✅ Registered partial: ${fullName}`);
+                        }
+                        // Expose the partial's fine-grained coverage to the {{#block}}
+                        // helper - explicit block calls in layouts resolve the partial
+                        // by name and stamp data-ignition-fine from here.
+                        if (fine && fine.size) {
+                            fineCoverage.set(fullName, fine);
+                        } else {
+                            fineCoverage.delete(fullName);
                         }
                     }
                 }
