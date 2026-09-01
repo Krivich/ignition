@@ -100,6 +100,12 @@ function build() {
     Object.keys(rawTemplates).forEach(function (name) {
       var source = rawTemplates[name];
       if (typeof source === 'string') {
+        // Register as a Handlebars partial too: template sources may nest
+        // {{> other/template}} calls, and those resolve through the global
+        // Handlebars partial registry, not ignition's own template map.
+        if (typeof Handlebars !== 'undefined') {
+          Handlebars.registerPartial(name, source);
+        }
         var compiled = null;
         registerTemplate(name, function (data) {
           if (!compiled && typeof Handlebars !== 'undefined') {
