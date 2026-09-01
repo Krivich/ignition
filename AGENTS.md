@@ -17,6 +17,19 @@ Ignition is **not a framework** and **contains no business logic**. It is a "dum
 - 80% of websites in the world are content sites, for which React is overkill
 - JSON + Handlebars is simpler than React + JSX + hooks, and works on any static hosting
 
+## Development Values
+
+How we work on this codebase — every change in this repo is held to these:
+
+- **TDD.** Tests first (red → green). A new behavior is pinned by contract tests before it exists; regressions are caught by the suite, never by hope.
+- **Measure, then claim.** Performance claims come from the benchmark harness (`engine/perf/`, `npm run bench`), always before/after on the same machine. Reactivity numbers are only valid in a real browser — jsdom DOM-op numbers are unreliable (documented methodology trap).
+- **Benefit vs cost, explicitly.** Every feature is weighed: LOC, KB gzip, conceptual load vs measured win. Features that cannot justify their price are cut or moved to an experimental branch; "unjustified complexity for 7%" is a rejected design.
+- **Graceful degradation by construction.** New mechanisms fall back to the previous behavior as the worst case (e.g. reconcile falls back to a naive innerHTML swap; uncovered templates keep the old re-render). A bug's blast radius is bounded by design.
+- **Isolation and reversibility.** Features are landed so they can be ripped out cleanly: additive core changes, self-contained files, assessed escape routes before commit. A revert must never take unrelated wins with it.
+- **Security is monitored, not assumed.** Dependency audits, path-traversal guards, prototype-pollution guards — guards ship with the code that needs them.
+- **Warnings must be actionable.** Build diagnostics carry stable `IGN-*` codes, name the template and the concrete reason, and are searchable in the docs with a fix recipe per code.
+- **Docs at two levels.** QUICKSTART (5 minutes) → REACTIVITY.md Part 1 (everyday) → Part 2 (deep dive: principles and "why", not source reading). Stale docs are bugs — fix them in the same change that makes them stale.
+
 ## Architecture
 
 ### MVC with External Controller
@@ -84,7 +97,7 @@ ignition/
 └── README.md                       # Project overview
 ```
 
-**Total: 394 tests across 45 test files (as of 2026-09-01)**
+**Total: 397 tests across 45 test files (as of 2026-09-01)**
 
 ## Technologies
 
