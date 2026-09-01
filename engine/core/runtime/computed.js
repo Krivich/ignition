@@ -69,6 +69,9 @@ export function createComputed(state, name, fn) {
   computeds.push(entry);
 
   const getter = () => {
+    // Coalesced mutations only invalidate computed entries on flush. A read
+    // must not return a stale cache, so drain pending notifications first.
+    if (typeof state.flush === 'function') state.flush();
     const parent = effectStack[effectStack.length - 1];
     if (parent) {
       parent.children.add(entry);

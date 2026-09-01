@@ -41,6 +41,7 @@ describe('fine-grained: row-scoped проекции (@p) внутри #each', ()
     bootStickers();
 
     state.products[1].price = 'CHANGED';
+    state.flush();
 
     const spans = document.querySelectorAll('.p');
     expect(spans[1].textContent).toBe('CHANGED');
@@ -62,6 +63,7 @@ describe('fine-grained: row-scoped проекции (@p) внутри #each', ()
     bootStickers();
 
     state.products[0].price = 'CHANGED';
+    state.flush();
     expect(document.querySelector('.lonely').textContent).toBe('static');
   });
 
@@ -81,17 +83,21 @@ describe('fine-grained: row-scoped проекции (@p) внутри #each', ()
       { name: 'n0', price: 'p0' },
       { name: 'n1', price: 'p1' },
     ];
+    state.flush();
 
     rescopeEachBindings(document.body);
 
     const spans = document.querySelectorAll('.p');
     expect(spans[0].textContent).toBe('p2');
     state.products[0].price = 'NEW0';
+    state.flush();
     expect(spans[0].textContent).toBe('NEW0');
     state.products[1].price = 'NEW1';
+    state.flush();
     expect(spans[1].textContent).toBe('NEW1');
     // старая подписка первой строки на products.2.* отвязана: products.2.price = 'x' не трогает её
     state.products[2].price = 'OLDPATH';
+    state.flush();
     expect(spans[0].textContent).toBe('NEW0');
     expect(spans[2].textContent).toBe('OLDPATH');
   });
@@ -109,13 +115,16 @@ describe('fine-grained: row-scoped проекции (@p) внутри #each', ()
     initBlocks(state);
 
     state.products[1].price = 'CHANGED';
+    state.flush();
     expect(document.querySelectorAll('.p')[1].textContent).toBe('CHANGED');
 
     state.products.push({ name: 'n3', price: 'p3' });
+    state.flush();
     const rows = document.querySelectorAll('.row');
     expect(rows.length).toBe(4);
     // свежая строка гидратилась из зарегистрированного шаблона со стикером
     state.products[3].price = 'NEW3';
+    state.flush();
     expect(document.querySelectorAll('.p')[3].textContent).toBe('NEW3');
     // а ряды 0..2 не перерисовались мусором
     expect(document.querySelectorAll('.p')[0].textContent).toBe('p0');
@@ -141,6 +150,7 @@ describe('fine-grained: row-scoped проекции (@p) внутри #each', ()
       const tpl = bootFineBlock('products');
 
       state.products[1].price = 'CHANGED';
+      state.flush();
 
       expect(tpl).toHaveBeenCalledTimes(1); // только стартовый render, ре-рендера нет
       const spans = document.querySelectorAll('.p');
@@ -152,10 +162,12 @@ describe('fine-grained: row-scoped проекции (@p) внутри #each', ()
       const tpl = bootFineBlock('products');
 
       state.products.push({ name: 'n3', price: 'p3' });
+      state.flush();
 
       expect(tpl.mock.calls.length).toBeGreaterThan(1);
       expect(document.querySelectorAll('.row').length).toBe(4);
       state.products[3].price = 'NEW3';
+      state.flush();
       expect(document.querySelectorAll('.p')[3].textContent).toBe('NEW3');
     });
 
@@ -166,12 +178,14 @@ describe('fine-grained: row-scoped проекции (@p) внутри #each', ()
         { name: 'x0', price: 'q0' },
         { name: 'x1', price: 'q1' },
       ];
+      state.flush();
 
       expect(tpl.mock.calls.length).toBeGreaterThan(1);
       const spans = document.querySelectorAll('.p');
       expect(spans.length).toBe(2);
       expect(spans[1].textContent).toBe('q1');
       state.products[0].price = 'Q0';
+      state.flush();
       expect(spans[0].textContent).toBe('Q0');
     });
 
@@ -179,6 +193,7 @@ describe('fine-grained: row-scoped проекции (@p) внутри #each', ()
       const tpl = bootFineBlock(null);
 
       state.products[1].price = 'CHANGED';
+      state.flush();
 
       expect(tpl.mock.calls.length).toBeGreaterThan(1);
       expect(document.querySelectorAll('.p')[1].textContent).toBe('CHANGED');
@@ -188,6 +203,7 @@ describe('fine-grained: row-scoped проекции (@p) внутри #each', ()
       const tpl = bootFineBlock('somethingElse');
 
       state.products[1].price = 'CHANGED';
+      state.flush();
 
       expect(tpl.mock.calls.length).toBeGreaterThan(1);
       expect(document.querySelectorAll('.p')[1].textContent).toBe('CHANGED');

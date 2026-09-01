@@ -55,6 +55,7 @@ describe('D. Reactive updates', () => {
       expect(renderCountD).toBe(1);
 
       state.a.b = 'new value';
+      state.flush();
 
       expect(renderCountA).toBe(2);
       expect(renderCountD).toBe(1);
@@ -77,6 +78,7 @@ describe('D. Reactive updates', () => {
       expect(renderCount).toBe(1);
 
       state.a.c = 'new c';
+      state.flush();
 
       expect(renderCount).toBe(2);
     });
@@ -121,6 +123,7 @@ describe('D. Reactive updates', () => {
       expect(renderCount).toBe(1);
 
       state.d = 'different';
+      state.flush();
 
       expect(renderCount).toBe(2);
     });

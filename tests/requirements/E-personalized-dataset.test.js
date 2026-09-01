@@ -110,6 +110,7 @@ describe('E. Personalized dataset and partial pre-rendering (real diff module)',
       const full = { reference: { industries: ['IT', 'Finance', 'Trade'] }, form: { name: 'Alice' } };
       const changed = diffSlices(manifest, blockPaths, full);
       mergeSlices(state, changed, blockPaths, full);
+      state.flush();
 
       expect(refRenderCount).toBe(2);
       expect(formRenderCount).toBe(1);

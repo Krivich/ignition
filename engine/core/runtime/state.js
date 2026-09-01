@@ -18,8 +18,8 @@ export function createReactiveState(initialData) {
   const rootTrie = createTrieNode();
   const proxyCache = new WeakMap();
   const proxyToRaw = new WeakMap();
-  let notifyDepth = 0;
-  let pendingNotifications = [];
+  const coalesced = [];
+  let scheduledFlush = false;
   let activeTracker = null;
   const ephemeralTimers = new Map();
   let suppressingEphemeralCancel = false;
@@ -66,23 +66,46 @@ export function createReactiveState(initialData) {
     }
   }
 
-  function notify(fullPath, oldVal, newVal, kind) {
-    if (notifyDepth > 0) {
-      pendingNotifications.push({ fullPath, oldVal, newVal, kind });
-      return;
+  // Notifications are coalesced: mutations inside a single task are drained in
+  // ONE pass (on the next microtask, or on an explicit flush()). Identical
+  // paths written several times collapse to a single notification with the
+  // first old value and the last new value — the DOM is patched once, not five
+  // times, for a burst like `price = 5; price = 6; price = 7`.
+  function queueNotify(fullPath, oldVal, newVal, kind) {
+    coalesced.push({ fullPath, oldVal, newVal, kind });
+    if (!scheduledFlush) {
+      scheduledFlush = true;
+      queueMicrotask(drain);
     }
-    notifyDepth++;
-    const notified = new Set();
-    doNotify(fullPath, oldVal, newVal, kind);
-    notified.add(fullPath);
-    notifyDepth--;
-    while (pendingNotifications.length > 0) {
-      const pending = pendingNotifications.shift();
-      if (notified.has(pending.fullPath)) continue;
-      notified.add(pending.fullPath);
-      notifyDepth++;
-      doNotify(pending.fullPath, pending.oldVal, pending.newVal, pending.kind);
-      notifyDepth--;
+  }
+
+  function drain() {
+    scheduledFlush = false;
+    // A single flush, like the old single notify round: a path that already
+    // dispatched once in THIS drain is skipped afterwards, so a subscriber
+    // writing the same path back does not cascade into an unbounded loop
+    // (the raw value is already applied; re-notification is what is bounded).
+    const seen = new Set();
+    let guard = 0;
+    while (coalesced.length > 0 && guard++ < 1e6) {
+      const batch = coalesced.splice(0);
+      // Head-of-burst collapse: identical paths written several times in one
+      // task fire ONCE, keeping the first old value and the last new value.
+      const merged = new Map();
+      for (const m of batch) {
+        const prev = merged.get(m.fullPath);
+        if (prev) {
+          prev.newVal = m.newVal;
+          prev.kind = m.kind;
+        } else {
+          merged.set(m.fullPath, m);
+        }
+      }
+      for (const m of merged.values()) {
+        if (seen.has(m.fullPath)) continue;
+        seen.add(m.fullPath);
+        doNotify(m.fullPath, m.oldVal, m.newVal, m.kind);
+      }
     }
   }
 
@@ -119,7 +142,7 @@ export function createReactiveState(initialData) {
           clearTimeout(ephemeralTimers.get(path));
           ephemeralTimers.delete(path);
         }
-        notify(path, old, value, kind);
+        queueNotify(path, old, value, kind);
         return true;
       },
 
@@ -128,7 +151,7 @@ export function createReactiveState(initialData) {
         const old = target[key];
         delete target[key];
         const path = prefix ? `${prefix}.${String(key)}` : String(key);
-        notify(path, old, undefined, 'structural');
+        queueNotify(path, old, undefined, 'structural');
         return true;
       }
     });
@@ -175,6 +198,10 @@ export function createReactiveState(initialData) {
     const deps = new Set(activeTracker);
     activeTracker = prev;
     return deps;
+  };
+
+  state.flush = function () {
+    drain();
   };
 
   state.set = function (path, value) {

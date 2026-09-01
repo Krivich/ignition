@@ -21,6 +21,7 @@ describe('fine-grained: классификация изменений (leaf vs s
     const kinds = [];
     const unsub = state.subscribe(path, (p, o, n, kind) => kinds.push(kind ?? 'none'));
     fn();
+    state.flush();
     unsub();
     return kinds;
   }

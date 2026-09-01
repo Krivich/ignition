@@ -55,6 +55,7 @@ describe('E. Биндинги и проекции (v2)', () => {
     initBinding(state, input);
 
     state.form.name = 'updated';
+    state.flush();
     expect(input.value).toBe('updated');
   });
 
@@ -83,6 +84,7 @@ describe('E. Биндинги и проекции (v2)', () => {
     expect(span.textContent).toBe('5');
 
     state.ui.count = 10;
+    state.flush();
     expect(span.textContent).toBe('10');
   });
 
@@ -96,6 +98,7 @@ describe('E. Биндинги и проекции (v2)', () => {
     expect(div.classList.contains('is-active')).toBe(false);
 
     state.ui.active = true;
+    state.flush();
     expect(div.classList.contains('is-active')).toBe(true);
   });
 
@@ -109,6 +112,7 @@ describe('E. Биндинги и проекции (v2)', () => {
     expect(button.disabled).toBe(true);
 
     state.ui.active = true;
+    state.flush();
     expect(button.disabled).toBe(false);
   });
 });
@@ -202,6 +206,7 @@ describe('E5/E6: автопроекции (data-ignition-text из {{expr}} в �
 
     expect(span.textContent).toBe('5');
     state.ui.count = 10;
+    state.flush();
     expect(span.textContent).toBe('10');
   });
 
@@ -304,8 +309,10 @@ describe('E5/E6: автопроекции (data-ignition-text из {{expr}} в �
 
       // И реактивно обновляется.
       clientState.ui.count = 10;
+      clientState.flush();
       expect(document.querySelector('.counter').textContent).toBe('10');
       clientState.title = 'Мир';
+      clientState.flush();
       expect(document.querySelector('.title').textContent).toBe('Мир');
     } finally {
       config.source = originalConfig.source;

@@ -84,6 +84,7 @@ describe('C. Client hydration', () => {
 
       // Changing state triggers re-render
       state.message = 'changed';
+      state.flush();
       expect(document.querySelector('[data-ignition-block]').innerHTML).toContain('changed');
     });
   });

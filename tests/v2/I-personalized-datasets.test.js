@@ -48,6 +48,7 @@ describe('I. Персонализированные датасеты', () => {
     expect(changed.has('test/list')).toBe(true);
 
     mergeSlices(state, changed, blockPaths, newDataset);
+    state.flush();
     expect(state.products).toEqual([{ name: 'X' }, { name: 'Y' }]);
 
     // Block should re-render

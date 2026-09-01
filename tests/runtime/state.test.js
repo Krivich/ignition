@@ -74,6 +74,7 @@ describe('ignition.state — реактивная модель', () => {
       const onChange = vi.fn();
       state.subscribe('products', onChange);
       state.products.loading = true;
+      state.flush();
       expect(onChange).toHaveBeenCalledWith('products.loading', expect.anything(), expect.anything(), 'leaf');
     });
 
@@ -82,6 +83,7 @@ describe('ignition.state — реактивная модель', () => {
       const onChange = vi.fn();
       state.subscribe('cart', onChange);
       state.cart.items.push({ id: 1 });
+      state.flush();
       expect(onChange).toHaveBeenCalled();
     });
 
@@ -90,6 +92,7 @@ describe('ignition.state — реактивная модель', () => {
       const onChange = vi.fn();
       state.subscribe('cart', onChange);
       state.cart.items.splice(0, 1);
+      state.flush();
       expect(onChange).toHaveBeenCalled();
     });
   });
@@ -100,6 +103,7 @@ describe('ignition.state — реактивная модель', () => {
       const onChange = vi.fn();
       state.subscribe('products', onChange);
       state.products.loading = true;
+      state.flush();
       expect(onChange).toHaveBeenCalledTimes(1);
     });
 
@@ -108,6 +112,7 @@ describe('ignition.state — реактивная модель', () => {
       const onChange = vi.fn();
       state.subscribe('count', onChange);
       state.count = 10;
+      state.flush();
       const [, oldVal, newVal] = onChange.mock.calls[0];
       expect(oldVal).toBe(0);
       expect(newVal).toBe(10);
@@ -120,6 +125,7 @@ describe('ignition.state — реактивная модель', () => {
       state.subscribe('products', onProducts);
       state.subscribe('cart', onCart);
       state.products.loading = true;
+      state.flush();
       expect(onProducts).toHaveBeenCalledTimes(1);
       expect(onCart).not.toHaveBeenCalled();
     });
@@ -139,6 +145,7 @@ describe('ignition.state — реактивная модель', () => {
       state.subscribe('count', fn1);
       state.subscribe('count', fn2);
       state.count = 1;
+      state.flush();
       expect(fn1).toHaveBeenCalledTimes(1);
       expect(fn2).toHaveBeenCalledTimes(1);
     });
@@ -148,9 +155,11 @@ describe('ignition.state — реактивная модель', () => {
       const onChange = vi.fn();
       const unsub = state.subscribe('count', onChange);
       state.count = 1;
+      state.flush();
       expect(onChange).toHaveBeenCalledTimes(1);
       unsub();
       state.count = 2;
+      state.flush();
       expect(onChange).toHaveBeenCalledTimes(1);
     });
   });
@@ -171,6 +180,7 @@ describe('ignition.state — реактивная модель', () => {
       const onChange = vi.fn();
       state.subscribe('form', onChange);
       state.form.fields.name = 'Тест';
+      state.flush();
       expect(onChange).toHaveBeenCalled();
     });
   });

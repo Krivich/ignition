@@ -43,6 +43,7 @@ describe('D. Реактивность', () => {
 
     // Mutate count
     state.count = 5;
+    state.flush();
 
     // Counter should re-render
     expect(counterBlock.innerHTML).toContain('5');
@@ -61,6 +62,7 @@ describe('D. Реактивность', () => {
     expect(block.innerHTML).toContain('A');
 
     state.items = [{ name: 'X' }];
+    state.flush();
     expect(block.innerHTML).toContain('X');
   });
 

@@ -76,6 +76,7 @@ describe('select options via {{#each}} in blocks', () => {
 
     // Change the array — block re-renders
     state.reference.industries = ['A', 'B', 'C', 'D', 'E'];
+    state.flush();
 
     const opts = select().querySelectorAll('option');
     expect(opts).toHaveLength(6); // placeholder + 5 items

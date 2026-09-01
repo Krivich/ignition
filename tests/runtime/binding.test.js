@@ -39,6 +39,7 @@ describe('ignition — привязки и обработчики', () => {
       document.body.appendChild(input);
       initBinding(state, input);
       state.ui.searchQuery = 'обновлено';
+      state.flush();
       expect(input.value).toBe('обновлено');
     });
 
@@ -115,6 +116,7 @@ describe('ignition — привязки и обработчики', () => {
       document.body.appendChild(checkbox);
       initBinding(state, checkbox);
       state.form.consent = true;
+      state.flush();
       expect(checkbox.checked).toBe(true);
     });
 
@@ -170,6 +172,7 @@ describe('ignition — привязки и обработчики', () => {
       initBlocks(state);
       const block = document.querySelector('[data-ignition-block]');
       state.products.items = [{ id: 3, name: 'Клавиатура' }];
+      state.flush();
       expect(block.innerHTML).toContain('Клавиатура');
       expect(block.innerHTML).not.toContain('Ноутбук');
     });
@@ -198,6 +201,7 @@ describe('ignition — привязки и обработчики', () => {
       initBlocks(state);
       const blocks = document.querySelectorAll('[data-ignition-block]');
       state.products.items = [{ id: 1 }];
+      state.flush();
       blocks.forEach(b => expect(b.innerHTML).toContain('1'));
     });
 
@@ -214,6 +218,7 @@ describe('ignition — привязки и обработчики', () => {
       const blockB = document.querySelector('[data-ignition-block="b/block"]');
       const htmlA = blockA.innerHTML;
       state.cart.items = [{ id: 1 }];
+      state.flush();
       expect(blockA.innerHTML).toBe(htmlA);
       expect(blockB.innerHTML).toBe('<p>cart:1</p>');
     });
@@ -245,6 +250,7 @@ describe('ignition — привязки и обработчики', () => {
       initBlocks(state, { afterHydrate });
       const callCount = afterHydrate.mock.calls.length;
       state.items = [1, 2, 3];
+      state.flush();
       expect(afterHydrate).toHaveBeenCalledTimes(callCount + 1);
     });
   });
@@ -307,6 +313,7 @@ describe('ignition — привязки и обработчики', () => {
       initBlocks(state);
       const block = document.querySelector('[data-ignition-block]');
       state.products = [{ name: 'Клавиатура' }];
+      state.flush();
       expect(block.innerHTML).toContain('Клавиатура');
       expect(block.innerHTML).not.toContain('Ноутбук');
     });
@@ -342,6 +349,7 @@ describe('ignition — привязки и обработчики', () => {
       initBlocks(state);
       const block = document.querySelector('[data-ignition-block]');
       state.categories = ['books'];
+      state.flush();
       expect(block.innerHTML).toContain('<span class="category">books</span>');
       expect(block.innerHTML).not.toContain('electronics');
     });
@@ -365,6 +373,7 @@ describe('ignition — привязки и обработчики', () => {
 
       expect(div.classList.contains('is-active')).toBe(false);
       state.ui.active = true;
+      state.flush();
       expect(div.classList.contains('is-active')).toBe(true);
     });
 
@@ -375,8 +384,10 @@ describe('ignition — привязки и обработчики', () => {
       initBinding(state, div);
 
       state.form.errors.email = 'required';
+      state.flush();
       expect(div.classList.contains('is-invalid')).toBe(true);
       state.form.errors.email = null;
+      state.flush();
       expect(div.classList.contains('is-invalid')).toBe(false);
     });
 
@@ -388,6 +399,7 @@ describe('ignition — привязки и обработчики', () => {
 
       state.ui.active = true;
       state.form.errors.email = 'required';
+      state.flush();
       expect(div.classList.contains('is-active')).toBe(true);
       expect(div.classList.contains('is-invalid')).toBe(true);
     });
@@ -400,6 +412,7 @@ describe('ignition — привязки и обработчики', () => {
       initBinding(state, div);
 
       state.ui.active = true;
+      state.flush();
       expect(div.classList.contains('is-active')).toBe(true);
     });
   });
@@ -422,6 +435,7 @@ describe('ignition — привязки и обработчики', () => {
 
       expect(btn.disabled).toBe(false);
       state.ui.valid = true;
+      state.flush();
       expect(btn.disabled).toBe(true);
     });
 
@@ -432,8 +446,10 @@ describe('ignition — привязки и обработчики', () => {
       initBinding(state, btn);
 
       state.ui.valid = true;
+      state.flush();
       expect(btn.disabled).toBe(true);
       state.ui.valid = false;
+      state.flush();
       expect(btn.disabled).toBe(false);
     });
 
@@ -445,6 +461,7 @@ describe('ignition — привязки и обработчики', () => {
 
       expect(btn.disabled).toBe(true);
       state.ui.valid = true;
+      state.flush();
       expect(btn.disabled).toBe(false);
     });
 
@@ -456,8 +473,10 @@ describe('ignition — привязки и обработчики', () => {
 
       expect(input.getAttribute('aria-invalid')).toBe(null);
       state.form.consent = true;
+      state.flush();
       expect(input.getAttribute('aria-invalid')).toBe('true');
       state.form.consent = false;
+      state.flush();
       expect(input.getAttribute('aria-invalid')).toBe(null);
     });
   });

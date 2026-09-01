@@ -121,6 +121,7 @@ describe('E. Personalized dataset: diff manifest and partial re-render', () => {
 
       const changed = diffSlices(manifest, blockPaths, newDataset);
       mergeSlices(state, changed, blockPaths, newDataset);
+      state.flush();
 
       // greeting re-rendered once more
       expect(greetingRenders).toBe(2);
