@@ -172,6 +172,24 @@ Add `data-ignition-key="{{id}}"` on the row element when rows can be
 reordered, inserted or deleted mid-list: rows are then matched by key and keep
 their DOM identity (focus, input values, scroll) across structural changes.
 
+### Fixing fine-grained warnings
+
+A build warning means the list still works - it just re-renders its block on
+every cell change. The degradation is safe; fix the template when the list is
+hot. Recipes per warning reason:
+
+| Warning reason | Fix |
+|----------------|-----|
+| Multi-expression nodes | Split into single-expression elements: `<span>{{a}}</span> <span>{{b}}</span>`; move static text (`Total: `) into its own element |
+| Helper calls (`{{upper name}}`) | Precompute the derived field in data or the controller (`item.nameUpper`), project the plain field |
+| `{{this}}` | Use object items (`{ name: x }`) instead of scalars, project `{{name}}` |
+| `{{../x}}` parent paths | The field is the same for every row - hoist it out of the list, render once above it |
+| `{{@index}}` | Replace numbering with CSS counters (`counter-reset`/`counter-increment`) - pure CSS, no state |
+| `{{else}}` branch | Hoist the empty state to the block level: wrap the list in `{{#if items.length}}...{{else}}...{{/if}}` (structural changes still re-render and flip it) |
+| Several top-level elements per row | Wrap the row content in one container element (`div`/`li`/`tr`) |
+| Conditional (`{{#if}}`) in the row body | No clean v1 fix - the condition re-shapes the row. Hoist it to the block level if possible, or accept the re-render (class/attr projections are not row-scoped yet, so they cannot replace a row-level `{{#if}}`) |
+| Nested `{{#each}}` | No v1 fix - extract the inner list into its own partial/block, or accept the re-render |
+
 ## 6. Controller
 
 The controller is where you attach events and mutate state. Create `input/controllers/{layout}.js`:

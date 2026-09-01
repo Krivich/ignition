@@ -321,6 +321,13 @@ describe('E5/E6: автопроекции (data-ignition-text из {{expr}} в �
     expect(fine.has('products')).toBe(true);
   });
 
+  it('onFine: рецепт {{else}} — if на уровне блока вокруг чистого each сохраняет покрытие', () => {
+    const tpl = `{{#if items.length}}{{#each items}}<div><span>{{name}}</span></div>{{/each}}{{else}}<p>none</p>{{/if}}`;
+    let fine = null;
+    applyProjections(tpl, { scopedOnly: true, onFine: (s) => { fine = s; } });
+    expect(fine.has('items')).toBe(true);
+  });
+
   it('onFine: {{#if}} внутри тела — коллекция НЕ покрыта (структурные флипы требуют ре-рендера)', () => {
     const tpl = `{{#each items}}<div>{{#if flag}}<span>{{name}}</span>{{/if}}</div>{{/each}}`;
     let fine = null;
