@@ -11,7 +11,7 @@ Tasks and ideas for Ignition development. Divided into what should be **in the c
 ## Phase 1: Polish and Stabilization
 
 - [ ] Split package into `@kartotech/ignition` (engine) and demo app (catalog, landing)
-- [x] Add tests (406 tests across 46 files: vitest + jsdom + playwright)
+ - [x] Add tests (426 tests across 48 files: vitest + jsdom + playwright)
 - [ ] Add ESLint + Prettier
 - [ ] CI/CD: GitHub Actions for linting and npm publishing
 - [ ] Fix first page: currently `1.html`, by convention should be `index.html`

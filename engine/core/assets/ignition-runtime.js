@@ -175,6 +175,22 @@ function registerBlockHelper(Handlebars, env) {
     const blockName = name.includes('/') ? name : layout ? `${layout}/${name}` : name;
     const fineCoverageSet = fineCoverage.get(blockName);
     const fine = options.hash.fine ?? (fineCoverageSet ? [...fineCoverageSet].join(', ') : undefined);
+    // Root branch signals from the partial's registration record (e.g.
+    // `metrics.loading` from {{#if metrics.loading}}) join the block's depends:
+    // a flag the whole widget branches on must re-render the block when it
+    // flips, independently of the data paths it renders.
+    const signals = blockSignals.get(blockName);
+    let dependsAttr = depends;
+    if (signals && signals.length) {
+      const list = String(depends || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      for (const s of signals) {
+        if (!list.includes(s)) list.push(s);
+      }
+      dependsAttr = list.join(', ');
+    }
 
     const parsed = parseBlockData(dataPath);
     // dataPath is always root-relative; resolve the manifest slice from the
@@ -211,7 +227,7 @@ function registerBlockHelper(Handlebars, env) {
     const attrs = [
       `data-ignition-block="${escapeAttr(blockName)}"`,
       dataPath ? `data-ignition-data="${escapeAttr(dataPath)}"` : '',
-      depends ? `data-ignition-depends="${escapeAttr(depends)}"` : '',
+      dependsAttr ? `data-ignition-depends="${escapeAttr(dependsAttr)}"` : '',
       fine ? `data-ignition-fine="${escapeAttr(fine)}"` : '',
     ]
       .filter(Boolean)
@@ -496,7 +512,26 @@ function hydrate(element, html) {
   // freshly parsed node, keeping the resulting DOM identical to the naive
   // replaceChildren swap. Node-identity (and with it focus, input state and
   // existing bindings) is preserved for stable rows.
+  const focused = document.activeElement;
+  const focusedSel = focused && focused.nodeType === 1
+    ? { start: focused.selectionStart, end: focused.selectionEnd }
+    : null;
   reconcileChildren(element, Array.from(element.childNodes), Array.from(temp.childNodes));
+  // Structural moves (keyed insert/delete/reorder) can make the browser blur
+  // the element that held focus even though its node identity survives. After
+  // the reconcile, re-focus the same element and restore its selection, so an
+  // input the user is editing keeps focus + caret across a structural add.
+  if (focused && focused.nodeType === 1 && focused.isConnected) {
+    const tag = focused.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') {
+      focused.focus();
+      if (focusedSel && typeof focused.setSelectionRange === 'function') {
+        focused.setSelectionRange(focusedSel.start, focusedSel.end);
+      }
+    } else {
+      focused.focus();
+    }
+  }
 }
 
 // Reuse a node only when attributes match exactly (name+value+order), so an
@@ -511,8 +546,12 @@ function attributesCompatible(a, b) {
   return true;
 }
 
+// A node is "keyed" only when it carries a NON-EMPTY data-ignition-key. Empty
+// keys (a row item lacks the keyed field) degrade gracefully: such rows are
+// matched positionally as in the plain order-preserving reconcile, so several
+// missing-key rows can never collide on the same Map slot.
 function isKeyed(node) {
-  return node.nodeType === 1 && node.hasAttribute('data-ignition-key');
+  return node.nodeType === 1 && !!(node.getAttribute('data-ignition-key') || '');
 }
 
 function reconcileChildren(parent, oldChildren, newChildren) {
@@ -531,12 +570,21 @@ function reconcileChildren(parent, oldChildren, newChildren) {
 
 function reconcileKeyed(parent, oldChildren, newChildren) {
   const byKey = new Map();
+  const unkeyedOld = [];
   for (const oldN of oldChildren) {
+    // Only ELEMENT rows are candidates for positional reuse: text/whitespace
+    // nodes have no attributes/children to sync and never carry a row key.
     if (isKeyed(oldN)) byKey.set(oldN.getAttribute('data-ignition-key'), oldN);
+    else if (oldN.nodeType === 1) unkeyedOld.push(oldN);
   }
   const used = new Set();
   for (let i = 0; i < newChildren.length; i++) {
     const newN = newChildren[i];
+    if (newN.nodeType !== 1) {
+      // text/whitespace node: nothing to match or sync — just place it
+      parent.appendChild(newN);
+      continue;
+    }
     const k = isKeyed(newN) ? newN.getAttribute('data-ignition-key') : null;
     if (k !== null) {
       const oldN = byKey.get(k);
@@ -546,8 +594,19 @@ function reconcileKeyed(parent, oldChildren, newChildren) {
         syncKeyedNode(oldN, newN);
         continue;
       }
+    } else if (unkeyedOld.length) {
+      // unkeyed new element: reuse the next unkeyed old element positionally,
+      // so a row missing its key field keeps its identity without colliding
+      // on the empty key.
+      const u = unkeyedOld.shift();
+      if (u && u.parentNode === parent && !used.has(u)) {
+        used.add(u);
+        parent.appendChild(u);
+        syncKeyedNode(u, newN);
+        continue;
+      }
     }
-    // unkeyed new node or no reusable match → insert the fresh node
+    // no reusable match → insert the fresh node
     parent.appendChild(newN);
   }
   // drop every old child that was not reused (deleted rows + unkeyed stragglers)

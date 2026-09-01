@@ -107,6 +107,47 @@ describe('ignition.render — клиентский рендеринг шабло
       expect(ul.children).toHaveLength(4);
       expect(ul.children[1].textContent).toBe('2 EDITED');
     });
+
+    it('data-ignition-key="" (поле отсутствует) ведёт себя как unkeyed: без коллизии пустых ключей', () => {
+      hydrate(ul, '<li data-ignition-key="">a</li><li data-ignition-key="">b</li>');
+      const a = ul.children[0];
+      hydrate(ul, '<li data-ignition-key="">a EDITED</li><li data-ignition-key="">b</li><li data-ignition-key="">x</li>');
+      expect(ul.children).toHaveLength(3);
+      expect(ul.children[0]).toBe(a);
+      expect(ul.children[0].textContent).toBe('a EDITED');
+    });
+
+    it('в смешанном списке пустые ключи матчатся по позиции, не вытесняя keyed-строки', () => {
+      hydrate(ul, mk([{ id: 'a', name: 'A' }, { id: '', name: 'anon' }, { id: 'c', name: 'C' }]));
+      const anon = ul.children[1];
+      const c = ul.children[2];
+      hydrate(ul, mk([{ id: 'a', name: 'A' }, { id: '', name: 'anon EDITED' }, { id: 'c', name: 'C' }]));
+      expect(ul.children[1]).toBe(anon);
+      expect(ul.children[1].textContent).toBe('anon EDITED');
+      expect(ul.children[2]).toBe(c);
+    });
+
+    it('keyed структурная вставка сверху сохраняет фокус и текст редактируемого input', () => {
+      // Rows as elements with an editable input; whitespace text nodes between
+      // them, exactly like real SSR output.
+      const row = (id, text) =>
+        `<li data-ignition-key="${id}"><span>${text}</span><input class="t"></li>`;
+      hydrate(ul, [row('b', 'B'), row('c', 'C')].join('\n  '));
+      const inputs = ul.querySelectorAll('input.t');
+      const inp = inputs[0];
+      inp.value = 'edited';
+      inp.focus();
+      expect(document.activeElement).toBe(inp);
+
+      // Insert a row ABOVE the focused one: keyed reconcile must keep the
+      // focused input's identity and restore its focus + selection.
+      hydrate(ul, [row('a', 'A'), row('b', 'B'), row('c', 'C')].join('\n  '));
+      const inputsAfter = ul.querySelectorAll('input.t');
+      expect(inputsAfter).toHaveLength(3);
+      expect(inputsAfter[1]).toBe(inp);
+      expect(inp.value).toBe('edited');
+      expect(document.activeElement).toBe(inp);
+    });
   });
 
   describe('fetchJson — загрузка данных', () => {

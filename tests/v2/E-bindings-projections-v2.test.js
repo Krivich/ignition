@@ -196,6 +196,37 @@ describe('E5/E6: автопроекции (data-ignition-text из {{expr}} в �
     expect(out.match(/<textarea[^>]*>/)[0]).not.toContain('data-ignition-text');
   });
 
+  it('авто-ключ: строка с {{id}} получает data-ignition-key="id"', () => {
+    const tpl = `{{#each products}}<div class="row"><b>{{id}}</b><span>{{name}}</span></div>{{/each}}`;
+    const out = applyProjections(tpl);
+    expect(out).toContain('<div class="row" data-ignition-row="products" data-ignition-key="{{id}}">');
+  });
+
+  it('авто-ключ: единственный кандидат {{slug}} проставляется в data-ignition-key', () => {
+    const tpl = `{{#each pages}}<li><a href="/{{slug}}">{{slug}}</a></li>{{/each}}`;
+    const out = applyProjections(tpl);
+    expect(out).toContain('<li data-ignition-row="pages" data-ignition-key="{{slug}}">');
+  });
+
+  it('авто-ключ НЕ ставится при нескольких кандидатах (id+slug)', () => {
+    const tpl = `{{#each docs}}<div class="row">{{id}} / {{slug}}</div>{{/each}}`;
+    const out = applyProjections(tpl);
+    expect(out).not.toContain('data-ignition-key');
+  });
+
+  it('авто-ключ НЕ ставится без кандидатов (только {{name}})', () => {
+    const tpl = `{{#each products}}<div class="row">{{name}}</div>{{/each}}`;
+    const out = applyProjections(tpl);
+    expect(out).not.toContain('data-ignition-key');
+  });
+
+  it('авто-ключ НЕ перебивает явный data-ignition-key и не дублирует его', () => {
+    const tpl = `{{#each products}}<div class="row" data-ignition-key="sku">{{id}} {{name}}</div>{{/each}}`;
+    const out = applyProjections(tpl);
+    expect((out.match(/data-ignition-key="sku"/g) || []).length).toBe(1);
+    expect(out).not.toContain('data-ignition-key="{{id}}"');
+  });
+
   it('рантайм обновляет автопроецированный текст точечно (E5)', () => {
     const span = document.createElement('span');
     span.setAttribute('data-ignition-text', 'ui.count');

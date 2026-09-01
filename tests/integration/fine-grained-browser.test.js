@@ -63,13 +63,17 @@ describe('fine-grained row projections in a real browser', () => {
     if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('SSR страницы содержит row-маркеры и @p-стикеры', async () => {
+  it('SSR страницы содержит row-маркеры, авто-ключи и @p-стикеры', async () => {
     const page = await browser.newPage();
     await page.goto(`${baseUrl}/demo/app.html`);
     await page.waitForLoadState('networkidle');
 
     // Row markers: one per product (5 in the demo data).
     expect(await page.locator('[data-ignition-row="products"]').count()).toBe(5);
+    // Auto-keyed rows: the row references {{id}}, so the compiler stamped
+    // data-ignition-key (stable row identity for the reconcile).
+    expect(await page.locator('[data-ignition-row="products"][data-ignition-key]').count()).toBe(5);
+    expect(await page.locator('[data-ignition-row="products"]').first().getAttribute('data-ignition-key')).toBe('1');
     // Each price cell carries a row-scoped sticker.
     expect(await page.locator('.p-price[data-ignition-text="@p:products.*.price"]').count()).toBe(5);
     // SSR text is in place before any JS runs (no-JS page is complete).
@@ -133,6 +137,44 @@ describe('fine-grained row projections in a real browser', () => {
     // clobber the fine-grained stickers.
     const firstRow = await page.locator('.product').first().locator('.p-price').textContent();
     expect(firstRow).toBe('59990');
+    await page.close();
+  });
+
+  it('фокус и введённый текст в строке переживают структурную вставку сверху (keyed reconcile)', async () => {
+    const page = await browser.newPage();
+    await page.goto(`${baseUrl}/demo/app.html`);
+    await page.waitForLoadState('networkidle');
+
+    // Focus an input in an existing row and type into it.
+    const note = page.locator('.p-note').nth(2);
+    await note.click();
+    await page.keyboard.type('моя заметка');
+    expect(await note.inputValue()).toBe('моя заметка');
+
+    // Trigger a structural insert ABOVE the focused row programmatically (not
+    // via a button click, which would move focus to the button itself). The
+    // keyed reconcile must keep the same DOM node for every existing row, so
+    // the focused input keeps its identity, its value and active focus.
+    await page.evaluate(() => {
+      window.ignition.state.products.unshift({ id: 6, name: 'Товар 6', price: 6000 });
+    });
+    await page.waitForFunction(() => document.querySelectorAll('.product').length === 6);
+    await page.waitForFunction(() => {
+      const els = Array.from(document.querySelectorAll('.p-note'));
+      return els[3] === document.activeElement && els[3].value === 'моя заметка';
+    });
+
+    // Focus, value and the newly inserted row on top are all intact.
+    expect(await page.locator('.product').count()).toBe(6);
+    const newTopKey = await page.locator('.product').first().getAttribute('data-ignition-key');
+    expect(newTopKey).toBe('6');
+    const preserved = page.locator('.p-note').nth(3);
+    expect(await preserved.inputValue()).toBe('моя заметка');
+    const focused = await page.evaluate(() => {
+      const el = document.activeElement;
+      return el && el.matches('.p-note') && el.value === 'моя заметка';
+    });
+    expect(focused).toBe(true);
     await page.close();
   });
 });

@@ -194,6 +194,38 @@ The engine turns that into a block with `data-ignition-depends="products"`
 (`data` omitted) and structural-only subscription to `products`. Point updates
 and structural adds now work in the same block.
 
+#### Branch signals are auto-deps
+
+If the block's template branches on a root path (`{{#if metrics.loading}}`,
+`{{#unless items.length}}`), the compiler adds that path to the block's
+`depends` automatically - you do not have to list it by hand. The block
+re-renders when the flag flips. This is what makes the classic loading
+skeleton pattern work predictably:
+
+```handlebars
+{{!-- input/templates/dashboard/summary.hbs --}}
+{{#if metrics.loading}}
+    <div class="skeleton"></div>
+{{else}}
+    <div class="metric">{{totalSales}}</div>
+{{/if}}
+```
+
+```js
+// controller: separate tasks -> the skeleton is visible between them
+state.metrics.loading = true;                 // task A: block re-renders -> skeleton
+setTimeout(function () {
+    state.metrics.sales = freshSales;          // task B: one coalesced pass
+    state.metrics.loading = false;             //         -> final content
+}, 300);
+```
+
+Writes in ONE task collapse into a single render of the final state (see §13),
+so a synchronous `loading = true; ...; loading = false` burst never flashes the
+skeleton - that is the point of coalescing. Signals only in leaf positions stay
+out of the way: a cell patch like `filteredSales.0.amount` does not touch
+`filteredSales.length` and does not re-render the block.
+
 ### Fixing fine-grained warnings
 
 A build warning means the list still works - it just re-renders its block on
@@ -526,6 +558,25 @@ warn: ⚠️ catalog/page: list "items" re-renders its block on every cell chang
 ```
 
 A `{{!-- ignition: nobind --}}` opt-out silences these warnings.
+
+### Root branch signals join the block's depends
+
+At registration time the renderer runs `collectRootSignals` on every partial:
+it walks the Handlebars AST and collects the condition paths of ROOT-context
+`{{#if}}`/`{{#unless}}` (dotted paths only - `this`, `../x`, `@index` and
+helper conditions are skipped, and paths inside `#each`/`#with`/`#block` are
+masked as per-item). The signals land in a shared registry keyed by partial
+name; the `{{#block}}` helper merges them into `data-ignition-depends` when it
+stamps the block (explicit depends still win and are never duplicated).
+
+Why compile-time analysis instead of runtime read-tracking: the block's
+renderer reads coarse parents (`s.metrics`), so tracking reads would subscribe
+the block to `metrics` and a leaf cell patch under `metrics.sales` would
+re-render it - defeating fine-grained updates. A branch path like
+`metrics.loading` is precise: only a write to that exact path fires it.
+
+The `depends` attribute stays byte-identical when a partial has no root branch
+signals, so existing pages do not change.
 
 ## 14. Auto-Binding Internals
 

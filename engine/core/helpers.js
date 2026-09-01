@@ -1,6 +1,6 @@
 import deepGet from '../utils/deepGet.js';
 import { parseBlockData, buildBlockContext } from '../utils/parseBlockData.js';
-import { fineCoverage } from './fineRegistry.js';
+import { fineCoverage, blockSignals } from './fineRegistry.js';
 
 let manifest = {};
 
@@ -122,6 +122,22 @@ export function registerBlockHelper(Handlebars, env) {
     const blockName = name.includes('/') ? name : layout ? `${layout}/${name}` : name;
     const fineCoverageSet = fineCoverage.get(blockName);
     const fine = options.hash.fine ?? (fineCoverageSet ? [...fineCoverageSet].join(', ') : undefined);
+    // Root branch signals from the partial's registration record (e.g.
+    // `metrics.loading` from {{#if metrics.loading}}) join the block's depends:
+    // a flag the whole widget branches on must re-render the block when it
+    // flips, independently of the data paths it renders.
+    const signals = blockSignals.get(blockName);
+    let dependsAttr = depends;
+    if (signals && signals.length) {
+      const list = String(depends || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      for (const s of signals) {
+        if (!list.includes(s)) list.push(s);
+      }
+      dependsAttr = list.join(', ');
+    }
 
     const parsed = parseBlockData(dataPath);
     // dataPath is always root-relative; resolve the manifest slice from the
@@ -158,7 +174,7 @@ export function registerBlockHelper(Handlebars, env) {
     const attrs = [
       `data-ignition-block="${escapeAttr(blockName)}"`,
       dataPath ? `data-ignition-data="${escapeAttr(dataPath)}"` : '',
-      depends ? `data-ignition-depends="${escapeAttr(depends)}"` : '',
+      dependsAttr ? `data-ignition-depends="${escapeAttr(dependsAttr)}"` : '',
       fine ? `data-ignition-fine="${escapeAttr(fine)}"` : '',
     ]
       .filter(Boolean)

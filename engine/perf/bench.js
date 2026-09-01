@@ -97,10 +97,12 @@ async function benchCSR() {
     const st = w2.__IGNITION_STATE__;
     const add = timeIt((i) => {
       st.cart.items.push({ id: 10000 + i, price: 100, name: 'Bench item ' + i });
+      st.flush();
     }, 20);
     out.cartPush = add;
     const remove = timeIt(() => {
       st.cart.items.splice(0, 1);
+      st.flush();
     }, 20);
     out.cartSplice = remove;
     d2.window.close();
@@ -111,25 +113,65 @@ async function benchCSR() {
     const st = window.__IGNITION_STATE__;
     const rows = st.metrics.sales;
     out.salesRows = rows.length;
-    st.ui.period = 'week';
+    const periodRun = (val) => {
+      const t0 = performance.now();
+      st.ui.period = val;
+      st.flush();
+      return performance.now() - t0;
+    };
     const periodRuns = [];
     for (let i = 0; i < 12; i++) {
-      const t0 = performance.now();
-      st.ui.period = i % 2 ? 'week' : 'month';
-      periodRuns.push(performance.now() - t0);
+      periodRuns.push(periodRun(i % 2 ? 'week' : 'month'));
     }
     out.dashboardPeriodToMonth = median(periodRuns.filter((_, i) => i % 2 === 0));
     out.dashboardPeriodToWeek = median(periodRuns.filter((_, i) => i % 2 === 1));
     const fresh = () => rows.map((r, i) => ({ ...r, amount: r.amount + 1 }));
     out.dashboardReplaceSales200 = timeIt(() => {
       st.metrics.sales = fresh();
+      st.flush();
     }, 10);
     st.ui.period = 'month';
-    // Fine-grained метрика: leaf-мутация одной ячейки. На блоке с
-    // data-ignition-fine это точечный патч стикером без ре-рендера блока.
+    // Fine-grained метрика: leaf-мутация одной ячейки + один flush. На блоке с
+    // data-ignition-fine это точечный патч стикером без ре-рендера блока; flush
+    // учитывает отложенный DOM-pass (коалесцинг), а не только синхронный set.
     out.dashboardPointUpdate = timeIt((i) => {
       st.filteredSales[i % rows.length].amount = 1000 + i;
-    }, 20);
+      st.flush();
+    }, 30);
+
+    // Coalescing-метрика: пачка N leaf-записей в одной таске схлопывается в
+    // ОДИН DOM-pass (микротаск), а не N ре-рендеров. Считаем фактические
+    // структурные ре-рендеры блока sales-list (диф) через MutationObserver:
+    // для leaf-записей на fine-блоке их должно быть ноль, уложенных в один
+    // flush. Измеряем время пачки и количество DOM-патчей.
+    const salesListBlock = window.document.querySelector('[data-ignition-block="dashboard/sales-list"]');
+    let floorPasses = 0;
+    if (salesListBlock) {
+      salesListBlock.___rerenderFloor = 0;
+      const mo = new window.MutationObserver((muts) => {
+        if (salesListBlock.___rerenderFloor === undefined) return;
+        for (const m of muts) if (m.type === 'childList') { salesListBlock.___rerenderFloor++; break; }
+      });
+      mo.observe(salesListBlock, { childList: true, subtree: true });
+      const burstRuns = [];
+      for (let b = 0; b < 12; b++) {
+        const target = st.filteredSales;
+        const t0 = performance.now();
+        for (let j = 0; j < 25; j++) {
+          const row = target[j % target.length];
+          if (row) row.amount = 5000 + b * 100 + j;
+        }
+        // Один flush на пачку: 25 записей обязаны схлопнуться в ОДИН DOM-pass.
+        st.flush();
+        burstRuns.push(performance.now() - t0);
+      }
+      // Сколько раз блок реально пере-рендерился суммарно за все пачки.
+      out.fineBatchStructuralPasses = salesListBlock.___rerenderFloor;
+      out.fineCoalescingBurst25 = {
+        median: median(burstRuns), min: Math.min(...burstRuns), max: Math.max(...burstRuns),
+      };
+      mo.disconnect();
+    }
     dom.window.close();
   }
 
@@ -140,6 +182,7 @@ async function benchCSR() {
     const fields = Object.keys(st.form.fields);
     out.formFieldEdit = timeIt((i) => {
       st.form.fields[fields[i % fields.length]] = 'edited-' + i;
+      st.flush();
     }, 40);
     dom.window.close();
   }
@@ -202,6 +245,11 @@ async function main() {
   ];
   for (const [name, r] of rows) {
     if (r) console.log(`${name.padEnd(34)} ${fmtMs(r.median).padStart(10)}  (min ${fmtMs(r.min)}, max ${fmtMs(r.max)})`);
+  }
+  if (csr.fineCoalescingBurst25) {
+    console.log('\n--- fine-grained coalescing (leaf bursts on a fine block) ---');
+    console.log(`burst of 25 leaf writes${''.padEnd(20)} ${fmtMs(csr.fineCoalescingBurst25.median).padStart(10)}  (min ${fmtMs(csr.fineCoalescingBurst25.min)}, max ${fmtMs(csr.fineCoalescingBurst25.max)})`);
+    console.log(`structural re-renders for 300 leaf writes: ${csr.fineBatchStructuralPasses}  (fine block should stay 0)`);
   }
 
   console.log('\n--- sizes ---');

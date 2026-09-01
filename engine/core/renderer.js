@@ -17,8 +17,8 @@ import {
 import { paginateCollection, preparePageData } from './pagination.js';
 import { resetManifest, getManifest } from './helpers.js';
 import { deriveInitialState, needsRuntime } from '../utils/deriveInitialState.js';
-import { fineCoverage } from './fineRegistry.js';
-import { analyzeTemplate, applyAutobindings, applyProjections } from './compiler.js';
+import { fineCoverage, blockSignals } from './fineRegistry.js';
+import { analyzeTemplate, applyAutobindings, applyProjections, collectRootSignals } from './compiler.js';
 import config from '../config/default.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -524,6 +524,16 @@ async function registerAllTemplatePartialsUncached(templatesDir, signature) {
                             fineCoverage.set(fullName, fine);
                         } else {
                             fineCoverage.delete(fullName);
+                        }
+                        // Expose the partial's root branch signals ({{#if X}} at
+                        // root context) to the {{#block}} helper - they merge
+                        // into the block's depends so widget-level flags like
+                        // `metrics.loading` re-render the block when they flip.
+                        const signals = collectRootSignals(content);
+                        if (signals.length) {
+                            blockSignals.set(fullName, signals);
+                        } else {
+                            blockSignals.delete(fullName);
                         }
                     }
                 }

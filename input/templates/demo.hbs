@@ -9,7 +9,9 @@
     h1 { font-size: 26px; }
     .hint { color: #555; font-size: 14px; max-width: 640px; }
     .list { display: flex; flex-direction: column; gap: 8px; margin: 16px 0; }
-    .product { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid #eee; border-radius: 8px; }
+    .product { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid #eee; border-radius: 8px; }
+    .p-id { color: #9ca3af; font-size: 12px; }
+    .p-note { width: 120px; font: inherit; padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 6px; }
     .p-price { font-variant-numeric: tabular-nums; font-weight: 600; color: #0f766e; }
     .p-price.flash { animation: flash 0.6s ease; }
     @keyframes flash { 0% { background: #99f6e4; } 100% { background: transparent; } }
@@ -32,7 +34,8 @@
 
   <div class="controls">
     <button id="bumpBtn" type="button">Цена +1 (точечное)</button>
-    <button id="addBtn" type="button">Добавить товар (структурное)</button>
+    <button id="addBtn" type="button">Добавить товар</button>
+    <button id="addTopBtn" type="button">Вставить сверху</button>
     <button id="resetBtn" type="button">Сброс</button>
   </div>
 

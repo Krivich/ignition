@@ -102,6 +102,89 @@ export function collectPartials(ast) {
 }
 
 /**
+ * Match a Handlebars path token that is a stable state signal at ROOT context:
+ * a plain dotted path with no `this/.`-relative parts, no `../`, no `@`-paths,
+ * no `[` indexing and no helper-call parentheses. Blocks branch on such paths
+ * (`{{#if metrics.loading}}`) to switch between states (e.g. a loading skeleton
+ * vs. settled content); making them block dependencies lets the runtime re-render
+ * the block when the flag flips, instead of relying on an incidental transient.
+ * @param {object} param - Handlebars AST param node
+ * @returns {boolean}
+ */
+function isRootSignal(param) {
+  return (
+    param &&
+    param.type === 'PathExpression' &&
+    param.original &&
+    param.original !== 'this' &&
+    /^[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*$/.test(param.original)
+  );
+}
+
+/**
+ * Collect ROOT-context branch signals from a template source: paths used as
+ * the condition of a top-level (not inside #each/#with/#block) `{{#if}}`/
+ * `{{#unless}}`. These are signals the whole widget branches on (e.g.
+ * `metrics.loading`), so they should re-render the host block when they change.
+ * Paths inside context-shifting blocks are per-item/relative and are masked out.
+ *
+ * @param {string} templateSource
+ * @returns {string[]} deduped root signal paths, in first-seen order
+ */
+export function collectRootSignals(templateSource) {
+  const signals = [];
+  const seen = new Set();
+  let contextShifts = 0;
+
+  function walk(node) {
+    if (!node) return;
+
+    if (node.type === 'BlockStatement') {
+      const path = node.path.original;
+
+      if (path === 'each' || path === 'with' || path === 'block') {
+        // Context shift: descendants are relative/per-item — mask them out.
+        contextShifts++;
+        walkChildren(node);
+        contextShifts--;
+        return;
+      }
+
+      if ((path === 'if' || path === 'unless') && contextShifts === 0) {
+        const cond = node.params && node.params[0];
+        if (isRootSignal(cond) && !seen.has(cond.original)) {
+          seen.add(cond.original);
+          signals.push(cond.original);
+        }
+      }
+
+      walkChildren(node);
+      return;
+    }
+
+    walkChildren(node);
+  }
+
+  function walkChildren(node) {
+    if (node.body) {
+      if (Array.isArray(node.body)) node.body.forEach(walk);
+      else walk(node.body);
+    }
+    if (node.program) {
+      if (Array.isArray(node.program.body)) node.program.body.forEach(walk);
+      else walk(node.program.body);
+    }
+    if (node.inverse) {
+      if (Array.isArray(node.inverse.body)) node.inverse.body.forEach(walk);
+      else walk(node.inverse.body);
+    }
+  }
+
+  walk(Handlebars.parse(templateSource));
+  return signals;
+}
+
+/**
  * Collect autobindings from template source.
  * Detects value="{{path}}" and checked="{{path}}" patterns.
  * 
@@ -296,10 +379,24 @@ export function applyProjections(templateSource, { scopedOnly = false, onFine = 
     if (r.mode === 'project') {
       const closeTag = templateSource.slice(r.closeTagStart, r.end);
       const body = r.body;
+      // Auto key: when the row references exactly one stable identity field
+      // ({id}/{slug}/{sku}) as a bare row-relative mustache, stamp it as
+      // data-ignition-key. Reconcile then keys rows by identity instead of
+      // position, so insert/delete/reorder reuse the same DOM nodes. Explicit
+      // data-ignition-key on the row always wins, and ambiguity (several
+      // candidates) skips auto-keying entirely.
+      const rowKeys = new Set();
+      const keyRe = /\{\{\s*(id|slug|sku)\s*\}\}/g;
+      let km;
+      while ((km = keyRe.exec(body)) !== null) rowKeys.add(km[1]);
+      const autoKey = rowKeys.size === 1 ? [...rowKeys][0] : null;
       // The row element is the body's FIRST tag - stamp the marker there.
       const stamped = body.replace(
         /^(\s*<[a-zA-Z][a-zA-Z0-9-]*[^>]*?)(\/?>)/,
-        (m, head, tail) => `${head} data-ignition-row="${r.collection}"${tail}`
+        (m, head, tail) => {
+          const keyAttr = autoKey && !/data-ignition-key\s*=/.test(head) ? ` data-ignition-key="{{${autoKey}}}"` : '';
+          return `${head} data-ignition-row="${r.collection}"${keyAttr}${tail}`;
+        }
       );
       const projectedBody = projectEachBody(r.collection, stamped);
       if (projectedBody.covered) {
@@ -412,7 +509,10 @@ function projectEachBody(collection, body) {
   // when EVERY expression in the body is a simple leaf that got a sticker.
   // Anything else (conditionals, helpers, multi-expr nodes, {{this}}) can
   // change without a sticker firing and keeps the block re-render mandatory.
-  const allExprs = body.match(/\{\{[^}]*\}\}/g) || [];
+  // Attribute expressions (e.g. data-ignition-key="{{id}}") render into an
+  // attribute, not a body text node, so they are EXCLUDED: they never need a
+  // sticker and must not inflate the count.
+  const textExprs = extractBodyExpressions(body);
   const text = body.replace(PROJ_RE, (match, tag, attrs, expr, path) => {
     if (/^(title|script|style|textarea)$/i.test(tag)) return match;
     if (/data-ignition-(text|binding|block)\s*=/.test(attrs)) return match;
@@ -424,10 +524,28 @@ function projectEachBody(collection, body) {
   });
   const stickerCount = (text.match(new RegExp(`data-ignition-text="@p:${collection}\\.\\*\\.`, 'g')) || []).length;
   const covered =
-    allExprs.length > 0 &&
-    stickerCount === allExprs.length &&
+    textExprs.length > 0 &&
+    stickerCount === textExprs.length &&
     !/\{\{[#^\/]/.test(body);
   return { text, covered };
+}
+
+// Extract only the mustache expressions that sit in an element BODY (between
+// an opening `>` and `</`), not inside an opening tag's attribute list. The
+// tag-region mask mirrors PROJ_RE's scope so the covered count matches the
+// number of stickers PROJ_RE can emit.
+function extractBodyExpressions(body) {
+  const out = [];
+  const tagRe = /<[a-zA-Z][a-zA-Z0-9-]*[^>]*?>/g;
+  let lastClose = 0;
+  let m;
+  while ((m = tagRe.exec(body)) !== null) {
+    const exprText = body.slice(lastClose, m.index);
+    for (const e of exprText.match(/\{\{[^}]*\}\}/g) || []) out.push(e);
+    lastClose = m.index + m[0].length;
+  }
+  for (const e of body.slice(lastClose).match(/\{\{[^}]*\}\}/g) || []) out.push(e);
+  return out;
 }
 
 /**

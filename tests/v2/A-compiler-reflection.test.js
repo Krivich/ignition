@@ -178,9 +178,32 @@ describe('A. Компиляторный рефлекшн', () => {
     expect(html).not.toContain('data-ignition-block="noblock/static-content"');
   });
 
-  it('A5: build --explain печатает производной рефлекшн', async () => {
-    // This test will be implemented when --explain flag is added
-    // For now, we document the expected behavior
-    expect(true).toBe(true); // Placeholder
+  it('A5: авто-ключ проставляется и рендерится значением в SSR-html', async () => {
+    const templatesDir = config.source.templates;
+    await fs.mkdir(path.join(templatesDir, 'products'), { recursive: true });
+
+    const layout = `<!DOCTYPE html>
+<html><body>
+  {{> products/list}}
+</body></html>`;
+
+    const partial = `{{#each products}}<div class="product-row">{{id}} {{name}}</div>{{/each}}`;
+
+    await fs.writeFile(path.join(templatesDir, 'products.hbs'), layout);
+    await fs.writeFile(path.join(templatesDir, 'products', 'list.hbs'), partial);
+
+    const data = {
+      products: [{ id: 1, name: 'A' }, { id: 2, name: 'B' }],
+      layout: 'products',
+      dataset: 'main',
+    };
+
+    const outputDir = path.join(config.output.html, 'products');
+    await renderTemplate(path.join(templatesDir, 'products.hbs'), data, outputDir, 'main', 'products');
+
+    const html = await fs.readFile(path.join(outputDir, 'main.html'), 'utf8');
+
+    expect(html).toContain('<div class="product-row" data-ignition-row="products" data-ignition-key="1">1 A</div>');
+    expect(html).toContain('<div class="product-row" data-ignition-row="products" data-ignition-key="2">2 B</div>');
   });
 });
